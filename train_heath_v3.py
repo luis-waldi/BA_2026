@@ -17,9 +17,9 @@ from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES
 # Pfade / Modellimport
 # ----------------------------------------------------------------------
 sys.path.append('./models')
-from models.pointnet2_sem_seg import get_model   # in_channel = 6+3
+from models.pointnet2_sem_seg import get_model   # in_channel = 6
 
-TILE_DIR    = '/Users/luis/Documents/BA/training_tiles_v2'
+TILE_DIR    = '/Users/luis/Documents/BA/data/processed/training_tiles_v2'
 INIT_MODEL  = './logs/heath_run2/best_model.pth'   # Warmstart aus Run 2
 LOG_DIR     = './logs/heath_run3'
 

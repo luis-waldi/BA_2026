@@ -15,7 +15,7 @@ from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES
 # ----------------------------------------------------------------------
 # Pfade
 # ----------------------------------------------------------------------
-TILE_DIR   = '/Users/luis/Documents/BA/training_tiles_v2'
+TILE_DIR   = '/Users/luis/Documents/BA/data/processed/training_tiles_v2'
 MODEL_PATH = './logs/heath_run3/best_model.pth'
 
 # ----------------------------------------------------------------------

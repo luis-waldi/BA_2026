@@ -7,7 +7,7 @@ import os
 import json
 import math
 
-TILE_DIR = "/Users/luis/Documents/BA/training_tiles_v2"
+TILE_DIR = "/Users/luis/Documents/BA/data/processed/training_tiles_v2"
 
 # Alle vorhandenen Kacheln einlesen und sortieren
 all_tiles = sorted([f for f in os.listdir(TILE_DIR) if f.endswith(".txt")])
