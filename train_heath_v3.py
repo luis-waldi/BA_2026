@@ -13,34 +13,22 @@ from tqdm import tqdm
 
 from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES
 
-# ----------------------------------------------------------------------
-# Pfade / Modellimport
-# ----------------------------------------------------------------------
 sys.path.append('./models')
-from models.pointnet2_sem_seg import get_model   # in_channel = 6
+from models.pointnet2_sem_seg import get_model
 
-TILE_DIR    = '/Users/luis/Documents/BA/data/processed/training_tiles_v2'
-INIT_MODEL  = './logs/heath_run2/best_model.pth'   # Warmstart aus Run 2
+TILE_DIR    = '/Users/luis/Documents/BA/data/processed/training_tiles_v3'
+INIT_MODEL  = './logs/heath_run2/best_model.pth'
 LOG_DIR     = './logs/heath_run3'
 
-# ----------------------------------------------------------------------
-# Hyperparameter
-# ----------------------------------------------------------------------
 EPOCHS      = 64
 BATCH_SIZE  = 8
 LR          = 1e-4
 ETA_MIN     = 1e-6
 NUM_WORKERS = 4
 
-# ----------------------------------------------------------------------
-# Device
-# ----------------------------------------------------------------------
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 print(f'Device: {device}')
 
-# ------------------------x----------------------------------------------
-# Splits laden
-# ----------------------------------------------------------------------
 with open(os.path.join(TILE_DIR, 'splits.json')) as f:
     splits = json.load(f)
 
@@ -52,13 +40,10 @@ train_ds = HeideDatasetV2(TILE_DIR, train_list, augment=True)
 val_ds   = HeideDatasetV2(TILE_DIR, val_list,   augment=False)
 
 train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
-                          num_workers=0, drop_last=True)   # 4 → 0
+                          num_workers=0, drop_last=True)
 val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False,
-                          num_workers=0)                    # 4 → 0
+                          num_workers=0)
 
-# ----------------------------------------------------------------------
-# Klassengewichte: 1/sqrt(count) ueber alle Trainingstiles
-# ----------------------------------------------------------------------
 print('Berechne Klassengewichte (1/sqrt(count)) ...')
 counts = Counter()
 for fname in train_list:
@@ -67,18 +52,15 @@ for fname in train_list:
     counts.update(lbl.tolist())
 
 count_arr = np.array([counts.get(c, 0) for c in range(NUM_CLASSES)], dtype=np.float64)
-count_arr = np.maximum(count_arr, 1)               # Division-durch-0 vermeiden
+count_arr = np.maximum(count_arr, 1)
 class_w   = 1.0 / np.sqrt(count_arr)
-class_w   = class_w / class_w.sum() * NUM_CLASSES   # Normierung
+class_w   = class_w / class_w.sum() * NUM_CLASSES
 class_weights = torch.tensor(class_w, dtype=torch.float32, device=device)
 
 print('Klassengewichte:')
 for i, n in enumerate(CLASS_NAMES):
     print(f'  {n:10s} count={int(count_arr[i]):>9d}  w={class_w[i]:.4f}')
 
-# ----------------------------------------------------------------------
-# Modell + Warmstart
-# ----------------------------------------------------------------------
 model = get_model(NUM_CLASSES).to(device)
 
 if os.path.exists(INIT_MODEL):
@@ -93,24 +75,17 @@ optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
     optimizer, T_max=EPOCHS, eta_min=ETA_MIN)
 
-# ----------------------------------------------------------------------
-# Weighted Loss: Klassengewicht * Per-Punkt-Qualitaetsgewicht
-# ----------------------------------------------------------------------
 def weighted_loss(seg_pred, target, point_w):
-    # seg_pred: (B, N, C) log-softmax | target: (B, N) | point_w: (B, N)
-    seg_pred = seg_pred.reshape(-1, NUM_CLASSES)   # (B*N, C)
-    target   = target.reshape(-1)                  # (B*N)
-    point_w  = point_w.reshape(-1)                 # (B*N)
+    seg_pred = seg_pred.reshape(-1, NUM_CLASSES)
+    target   = target.reshape(-1)
+    point_w  = point_w.reshape(-1)
 
     loss_pp = F.nll_loss(seg_pred, target,
                          weight=class_weights,
-                         reduction='none')          # (B*N)
+                         reduction='none')
     loss = (loss_pp * point_w).sum() / (point_w.sum() + 1e-8)
     return loss
 
-# ----------------------------------------------------------------------
-# IoU-Berechnung
-# ----------------------------------------------------------------------
 def compute_iou(conf_mat):
     ious = []
     for c in range(NUM_CLASSES):
@@ -121,26 +96,22 @@ def compute_iou(conf_mat):
         ious.append(tp / denom if denom > 0 else float('nan'))
     return ious
 
-# ----------------------------------------------------------------------
-# Training
-# ----------------------------------------------------------------------
 os.makedirs(LOG_DIR, exist_ok=True)
 writer = SummaryWriter(LOG_DIR)
 best_miou = 0.0
 
 for epoch in range(EPOCHS):
-    # ---- Train ----
     model.train()
     train_loss = 0.0
     for points, labels, pw in tqdm(train_loader, desc=f'Epoche {epoch+1}/{EPOCHS} [Train]'):
-        points = points.to(device)        # (B, N, 6)
-        labels = labels.to(device)        # (B, N)
-        pw     = pw.to(device)            # (B, N)
+        points = points.to(device)
+        labels = labels.to(device)
+        pw     = pw.to(device)
 
-        inp = points.transpose(2, 1).contiguous()  # (B, 6, N)
+        inp = points.transpose(2, 1).contiguous()
 
         optimizer.zero_grad()
-        seg_pred, _ = model(inp)          # (B, N, C)
+        seg_pred, _ = model(inp)
         loss = weighted_loss(seg_pred, labels, pw)
         loss.backward()
         optimizer.step()
@@ -149,7 +120,6 @@ for epoch in range(EPOCHS):
     train_loss /= len(train_loader)
     scheduler.step()
 
-    # ---- Val ----
     model.eval()
     conf_mat = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.int64)
     val_loss = 0.0
@@ -163,7 +133,7 @@ for epoch in range(EPOCHS):
             seg_pred, _ = model(inp)
             val_loss += weighted_loss(seg_pred, labels, pw).item()
 
-            pred = seg_pred.argmax(dim=2)        # (B, N)
+            pred = seg_pred.argmax(dim=2)
             p = pred.cpu().numpy().reshape(-1)
             t = labels.cpu().numpy().reshape(-1)
             for ti, pi in zip(t, p):
@@ -173,7 +143,6 @@ for epoch in range(EPOCHS):
     ious = compute_iou(conf_mat)
     miou = np.nanmean(ious)
 
-    # ---- Logging ----
     lr_now = optimizer.param_groups[0]['lr']
     print(f'\nEpoche {epoch+1}/{EPOCHS}  lr={lr_now:.2e}')
     print(f'  train_loss={train_loss:.4f}  val_loss={val_loss:.4f}  mIoU={miou:.4f}')
@@ -187,7 +156,6 @@ for epoch in range(EPOCHS):
     for i, n in enumerate(CLASS_NAMES):
         writer.add_scalar(f'IoU/{n}', ious[i], epoch)
 
-    # ---- Bestes Modell speichern ----
     if miou > best_miou:
         best_miou = miou
         torch.save({

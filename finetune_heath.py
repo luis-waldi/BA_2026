@@ -1,8 +1,3 @@
-"""
-finetune_heath.py
-Lädt das beste Modell und trainiert mit niedrigerer Lernrate weiter.
-Starte mit: caffeinate -dims python finetune_heath.py
-"""
 import os
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
@@ -17,8 +12,8 @@ from models.pointnet2_sem_seg import get_model, get_loss
 from data_utils.heath_dataset import HeideDataset, NUM_CLASSES, CLASS_NAMES
 
 BATCH_SIZE    = 8
-EPOCHS        = 64          # Mehr Epochen, stabileres Training
-LEARNING_RATE = 1e-4        # 10x niedriger als vorher (war 1e-3)
+EPOCHS        = 64
+LEARNING_RATE = 1e-4
 TILE_DIR      = '/Users/luis/Documents/BA/training_tiles'
 LOG_DIR       = './logs/heath_run2'
 PRETRAINED    = './logs/heath_run1/best_model.pth'
@@ -57,8 +52,6 @@ def main():
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE,
                               shuffle=False)
 
-    # Aggressivere Gewichte: Quadratwurzel der inversen Haeufigkeit
-    # Damit seltene Klassen staerker betont werden ohne zu explodieren
     raw_counts = np.array([91358, 27120, 404802, 556455,
                            329, 45694, 3380, 1574904])
     weights = 1.0 / np.sqrt(raw_counts + 1e-6)
@@ -71,13 +64,11 @@ def main():
 
     model = get_model(NUM_CLASSES).to(device)
 
-    # Bestes Modell aus Run 1 laden
     print(f"\nLade vortrainiertes Modell: {PRETRAINED}")
     model.load_state_dict(torch.load(PRETRAINED, map_location=device))
 
     criterion = get_loss().to(device)
 
-    # Niedrigere Lernrate + Cosine-Scheduler fuer stabiles Abklingen
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
                                  weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -94,7 +85,6 @@ def main():
 
         current_lr = optimizer.param_groups[0]['lr']
 
-        # --- TRAINING ---
         model.train()
         train_loss = 0.0
 
@@ -122,7 +112,6 @@ def main():
         writer.add_scalar('Loss/Train', avg_loss, epoch)
         writer.add_scalar('LR', current_lr, epoch)
 
-        # --- VALIDIERUNG ---
         model.eval()
         all_ious = []
 
@@ -152,7 +141,6 @@ def main():
         for name, val in zip(CLASS_NAMES, iou_array):
             print(f"  {name:<12} IoU = {val:.4f}")
 
-        # Checkpoint nach jeder Epoche
         torch.save({
             'epoch':           epoch,
             'model_state':     model.state_dict(),
