@@ -50,6 +50,8 @@ def parse_args():
     p.add_argument('--step_size', type=int, default=10, help='Epochen je LR-Abfall')
     p.add_argument('--lr_decay', type=float, default=0.7)
     p.add_argument('--num_workers', type=int, default=0, help='0 auf Apple Silicon empfohlen')
+    p.add_argument('--loss', type=str, default='weighted', choices=['weighted', 'focal'])
+    p.add_argument('--gamma', type=float, default=2.0, help='Focusing-Parameter fuer Focal Loss')
     return p.parse_args()
 
 
@@ -160,11 +162,16 @@ def main(args):
 
     # Loss: klassengewichtetes NLL, zusaetzlich per-Punkt gewichtet, um unsichere
     # Labels (Schatten, Ueberbelichtung, geringe Confidence) abzuschwaechen.
+    # Focal Loss zusaetzlich, der leichte, sichere Punkte daempft
+    # und den Fokus auf schwere/seltene Punkte legt.
     def weighted_loss(seg_pred, target, point_w):
         seg_pred = seg_pred.reshape(-1, NUM_CLASSES)
         target = target.reshape(-1)
         point_w = point_w.reshape(-1)
         loss_pp = F.nll_loss(seg_pred, target, weight=class_weights, reduction='none')
+        if args.loss == 'focal':
+            logpt = seg_pred.gather(1, target.unsqueeze(1)).squeeze(1)  # log p_t
+            loss_pp = (1.0 - logpt.exp()) ** args.gamma * loss_pp
         return (loss_pp * point_w).sum() / (point_w.sum() + 1e-8)
 
     best_iou = 0.0

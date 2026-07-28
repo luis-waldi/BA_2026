@@ -10,7 +10,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--tile_dir", default="/Users/luis/Documents/BA/data/processed/training_tiles_v3")
 TILE_DIR = parser.parse_args().tile_dir
 
-all_tiles = sorted(f for f in os.listdir(TILE_DIR) if f.endswith(".txt"))
+all_tiles = sorted(f for f in os.listdir(TILE_DIR)
+                   if f.endswith(".txt") and not f.startswith("."))
 n = len(all_tiles)
 print(f"Gesamt: {n} Kacheln gefunden.")
 
