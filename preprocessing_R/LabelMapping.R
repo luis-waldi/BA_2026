@@ -88,8 +88,8 @@ tiles <- list(
 )
 
 # Nur diese Spalten behalten. Verschiedene Wolken haben unterschiedliche
-# Extra-Attribute (z.B. Normalen), sonst bricht rbind unten.
-keep_cols <- c("X", "Y", "Z", "R", "G", "B",
+# Extra-Attribute, sonst bricht rbind unten.
+keep_cols <- c("X", "Y", "Z", "R", "G", "B", "NIR",
                "class", "shadow", "overexposed", "confidence")
 
 tile_list <- list()
@@ -121,7 +121,7 @@ for (i in seq_along(tiles)) {
   las_lab <- merge_spatial(las_lab,  polys, "overexposed")
   las_lab <- merge_spatial(las_lab,  polys, "confidence")
 
-  # Nur gelabelte Punkte. Leerer String "" extra abfangen.
+  # Nur gelabelte Punkte. Leerer String extra abfangen.
   las_train <- filter_poi(las_lab, !is.na(class) & class != "")
 
   tile_list[[i]] <- las_train@data[, ..keep_cols]
@@ -168,6 +168,7 @@ df_all <- readRDS("/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_
 shadow_vec  <- as.integer(df_all$shadow      %in% c(TRUE, "true", "True", "1", 1))
 overexp_vec <- as.integer(df_all$overexposed %in% c(TRUE, "true", "True", "1", 1))
 conf_vec    <- as.numeric(df_all$confidence)
+nir_vec     <- as.numeric(df_all$NIR)
 
 # Standard-LAS bauen
 df_std <- df_all
@@ -175,6 +176,7 @@ df_std$class       <- NULL
 df_std$shadow      <- NULL
 df_std$overexposed <- NULL
 df_std$confidence  <- NULL
+df_std$NIR         <- NULL   
 
 # class_id als Classification ins df schreiben, bevor das LAS gebaut wird.
 # Bei einem fertigen LAS koennte Classification nicht mehr neu angelegt werden.
@@ -188,12 +190,13 @@ st_crs(las_all) <- 25832
 las_all <- add_lasattribute(las_all, shadow_vec,  "shadow",      "Schatten 0/1")
 las_all <- add_lasattribute(las_all, overexp_vec, "overexposed", "Ueberbelichtet 0/1")
 las_all <- add_lasattribute(las_all, conf_vec,    "confidence",  "Label-Confidence")
+las_all <- add_lasattribute(las_all, nir_vec,     "nir",         "Nahinfrarot")
 
 writeLAS(las_all, "/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_tiles_classified_v3.laz")
 
 # Attribute muessen erhalten sein
 las_check <- readLAS("/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_tiles_classified_v3.laz")
-print(names(las_check@data))   # shadow, overexposed, confidence muessen dabei sein
+print(names(las_check@data))   
 #----------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------
 #Höhen Schwellenwerte bestimmen um unrealistische Fehlklassifikationen zu korrigieren
@@ -234,11 +237,12 @@ library(lidR)
 library(sf)
 las_norm <- readLAS("/Users/luis/Documents/BA/data/processed/tiles_csf_knnidw_final_v3.laz")
 
-output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v3/"
+output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v3_nir/"
 dir.create(output_dir, showWarnings = FALSE)
 # alte Tiles entfernen, damit ein neuer Lauf sauber startet
 file.remove(list.files(output_dir, pattern = "\\.txt$", full.names = TRUE))
 
+set.seed(42)  # reproduzierbares Sampling der Punkte je Kachel
 tile_size <- 10; stride <- 5; n_points <- 4096
 # label_map: class_id -> 0-indexiertes Label fuer PointNet++.
 # An die Klassenreihenfolge in class_levels gekoppelt.
@@ -323,11 +327,12 @@ for (rn in names(regions)) {
         x_centered <- pts$X - (xi + tile_size/2)
         y_centered <- pts$Y - (yi + tile_size/2)
         r_norm <- pts$R/65535; g_norm <- pts$G/65535; b_norm <- pts$B/65535
+        nir_norm <- pts$nir/65535
         labels <- label_map[as.character(pts$Classification)]
 
-        # 3 Zusatzspalten ans Ende
+        # Spalten: x, y, z, R, G, B, NIR, label, shadow, overexposed, confidence
         mat <- cbind(x_centered, y_centered, pts$Z,
-                     r_norm, g_norm, b_norm,
+                     r_norm, g_norm, b_norm, nir_norm,
                      labels,
                      pts$shadow, pts$overexposed, pts$confidence)
 

@@ -26,13 +26,17 @@ class HeideDatasetV2(Dataset):
         self.weight_list = []   # je Kachel: (N,)    Per-Punkt-Gewicht
 
         for fname in tile_list:
-            data = np.loadtxt(os.path.join(tile_dir, fname), dtype=np.float32)  # (N, 10)
+            data = np.loadtxt(os.path.join(tile_dir, fname), dtype=np.float32)
 
-            points = data[:, :6].copy()                 # x,y,z,R,G,B
-            labels = data[:, 6].astype(np.int64)
-            shadow      = data[:, 7]
-            overexposed = data[:, 8]
-            confidence  = data[:, 9]
+            # Spaltenzahl bestimmt die Featureanzahl: 6 nur RGB oder 7 mit NIR.
+            # Danach folgen label, shadow, overexposed, confidence.
+            n_feat = 7 if data.shape[1] >= 11 else 6
+
+            points = data[:, :n_feat].copy()            # x,y,z,R,G,B[,NIR]
+            labels = data[:, n_feat].astype(np.int64)
+            shadow      = data[:, n_feat + 1]
+            overexposed = data[:, n_feat + 2]
+            confidence  = data[:, n_feat + 3]
 
             # Per-Punkt-Gewicht, einmalig vorberechnet
             w = confidence / CONFIDENCE_MAX                              # [0.2, 1.0]
