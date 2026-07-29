@@ -1,7 +1,6 @@
 # Training PointNet++ zur semantischen Segmentierung der Heidevegetation.
-# Trainingsablauf angelehnt an yanx27/Pointnet_Pointnet2_pytorch (train_semseg.py):
-# Step-LR, BN-Momentum-Decay, Xavier-Init, mIoU je Klasse.
-# Angepasst an eigenen Datensatz (8 Klassen, 6 Kanaele x,y,z,R,G,B), Apple Silicon
+# Trainingsablauf angelehnt an yanx27/Pointnet_Pointnet2_pytorch (train_semseg.py).
+# Angepasst an eigenen Datensatz (8 bzw. 6 Klassen, 6 Kanaele x,y,z,R,G,B, NIR), Apple Silicon
 # (MPS) und einen zusaetzlich per-Punkt gewichteten Loss.
 # Modell: PointNet++.
 import os
@@ -24,7 +23,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import provider
-from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES
+from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES, IGNORE_INDEX
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(BASE_DIR, 'models'))
@@ -168,10 +167,13 @@ def main(args):
         seg_pred = seg_pred.reshape(-1, NUM_CLASSES)
         target = target.reshape(-1)
         point_w = point_w.reshape(-1)
-        loss_pp = F.nll_loss(seg_pred, target, weight=class_weights, reduction='none')
+        loss_pp = F.nll_loss(seg_pred, target, weight=class_weights,
+                             reduction='none', ignore_index=IGNORE_INDEX)
         if args.loss == 'focal':
-            logpt = seg_pred.gather(1, target.unsqueeze(1)).squeeze(1)  # log p_t
+            tgt = target.clamp(0, NUM_CLASSES - 1)  # ignorierte Labels sind hier egal, loss_pp=0
+            logpt = seg_pred.gather(1, tgt.unsqueeze(1)).squeeze(1)  # log p_t
             loss_pp = (1.0 - logpt.exp()) ** args.gamma * loss_pp
+        point_w = point_w * (target != IGNORE_INDEX).float()  # ignorierte Punkte nicht mitzaehlen
         return (loss_pp * point_w).sum() / (point_w.sum() + 1e-8)
 
     best_iou = 0.0
@@ -209,8 +211,9 @@ def main(args):
             optimizer.step()
 
             pred = seg_pred.argmax(dim=2)
-            total_correct += (pred == target).sum().item()
-            total_seen += target.numel()
+            valid = target != IGNORE_INDEX
+            total_correct += ((pred == target) & valid).sum().item()
+            total_seen += valid.sum().item()
             loss_sum += loss.item()
 
         log_string('Train  loss=%.4f  OA=%.4f' %
@@ -236,8 +239,9 @@ def main(args):
 
                 pred = seg_pred.argmax(dim=2).cpu().numpy()
                 gt = target.cpu().numpy()
-                total_correct += np.sum(pred == gt)
-                total_seen += gt.size
+                valid = gt != IGNORE_INDEX
+                total_correct += np.sum((pred == gt) & valid)
+                total_seen += np.sum(valid)
                 for l in range(NUM_CLASSES):
                     seen_c[l] += np.sum(gt == l)
                     corr_c[l] += np.sum((pred == l) & (gt == l))

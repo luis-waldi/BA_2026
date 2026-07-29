@@ -2,12 +2,19 @@ import os
 import numpy as np
 from torch.utils.data import Dataset
 
-NUM_CLASSES = 8
-CLASS_NAMES = ['bush', 'deadwood', 'graminoid', 'heath',
-               'other', 'sand', 'soil', 'tree']
+# Reduziertes Klassenschema: sand und soil zu "ground" zusammengelegt,
+# other ausgeschlossen. Von 8 auf 6 Klassen.
+NUM_CLASSES = 6
+CLASS_NAMES = ['bush', 'deadwood', 'graminoid', 'heath', 'ground', 'tree']
+IGNORE_INDEX = 255
+
+# Abbildung der urspruenglichen 8 Labels auf das reduzierte Schema:
+# bush 0->0, deadwood 1->1, graminoid 2->2, heath 3->3, other 4->ignore,
+# sand 5->4 (ground), soil 6->4 (ground), tree 7->5
+_LABEL_MAP = np.array([0, 1, 2, 3, IGNORE_INDEX, 4, 4, 5], dtype=np.int64)
 
 # Per-Punkt-Qualitaetsgewicht aus shadow/overexposed/confidence
-CONFIDENCE_MAX     = 10     # Skala 2-10, 9 fehlt in Daten – irrelevant
+CONFIDENCE_MAX     = 10     
 SHADOW_WEIGHT      = 0.3
 OVEREXPOSED_WEIGHT = 0.3
 MIN_WEIGHT         = 0.05
@@ -21,9 +28,9 @@ class HeideDatasetV2(Dataset):
 
         # Alle Kacheln einmal vorladen und im RAM halten, statt jede .txt bei
         # jedem Zugriff neu einzulesen.
-        self.points_list = []   # je Kachel: (N, 6)  x,y,z,R,G,B
-        self.labels_list = []   # je Kachel: (N,)    Klassenlabel 0..7
-        self.weight_list = []   # je Kachel: (N,)    Per-Punkt-Gewicht
+        self.points_list = []   
+        self.labels_list = []   
+        self.weight_list = []   
 
         for fname in tile_list:
             data = np.loadtxt(os.path.join(tile_dir, fname), dtype=np.float32)
@@ -32,17 +39,17 @@ class HeideDatasetV2(Dataset):
             # Danach folgen label, shadow, overexposed, confidence.
             n_feat = 7 if data.shape[1] >= 11 else 6
 
-            points = data[:, :n_feat].copy()            # x,y,z,R,G,B[,NIR]
-            labels = data[:, n_feat].astype(np.int64)
+            points = data[:, :n_feat].copy()            
+            labels = _LABEL_MAP[data[:, n_feat].astype(np.int64)]  
             shadow      = data[:, n_feat + 1]
             overexposed = data[:, n_feat + 2]
             confidence  = data[:, n_feat + 3]
 
             # Per-Punkt-Gewicht, einmalig vorberechnet
-            w = confidence / CONFIDENCE_MAX                              # [0.2, 1.0]
+            w = confidence / CONFIDENCE_MAX                              
             w = np.where(shadow      > 0.5, w * SHADOW_WEIGHT,      w)   # Schatten abwerten
             w = np.where(overexposed > 0.5, w * OVEREXPOSED_WEIGHT, w)  # Ueberbelichtung abwerten
-            w = np.clip(w, MIN_WEIGHT, 1.0).astype(np.float32)          # untere Grenze 0.05
+            w = np.clip(w, MIN_WEIGHT, 1.0).astype(np.float32)          
 
             self.points_list.append(points)
             self.labels_list.append(labels)

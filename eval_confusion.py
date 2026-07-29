@@ -62,7 +62,8 @@ with torch.no_grad():
         p = pred.cpu().numpy().reshape(-1)
         t = labels.cpu().numpy().reshape(-1)
         for ti, pi in zip(t, p):
-            conf_mat[ti, pi] += 1
+            if ti < NUM_CLASSES:          
+                conf_mat[ti, pi] += 1
 
 # Kennzahlen je Klasse aus der Confusion Matrix 
 seen_class    = conf_mat.sum(axis=1)                       
