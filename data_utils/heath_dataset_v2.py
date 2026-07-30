@@ -2,16 +2,33 @@ import os
 import numpy as np
 from torch.utils.data import Dataset
 
-# Reduziertes Klassenschema: sand und soil zu "ground" zusammengelegt,
-# other ausgeschlossen. Von 8 auf 6 Klassen.
-NUM_CLASSES = 6
-CLASS_NAMES = ['bush', 'deadwood', 'graminoid', 'heath', 'ground', 'tree']
 IGNORE_INDEX = 255
 
-# Abbildung der urspruenglichen 8 Labels auf das reduzierte Schema:
-# bush 0->0, deadwood 1->1, graminoid 2->2, heath 3->3, other 4->ignore,
-# sand 5->4 (ground), soil 6->4 (ground), tree 7->5
-_LABEL_MAP = np.array([0, 1, 2, 3, IGNORE_INDEX, 4, 4, 5], dtype=np.int64)
+# Klassenschema ueber die Umgebungsvariable HEATH_SCHEMA umschaltbar, damit
+# Trainings- und Auswertungsskripte unveraendert bleiben:
+#   HEATH_SCHEMA=taxo8   8 Klassen, Originalschema der Baseline (run01-run03)
+#   HEATH_SCHEMA=taxo6   6 Klassen, sand+soil zu ground, other ignoriert
+#   HEATH_SCHEMA=binary  2 Klassen, Gehoelz (bush+tree) gegen alles andere
+# Rohlabels: 0 bush, 1 deadwood, 2 graminoid, 3 heath, 4 other, 5 sand,
+# 6 soil, 7 tree.
+_SCHEMAS = {
+    # bush, deadwood, graminoid, heath, other, sand, soil, tree
+    'taxo8': (['bush', 'deadwood', 'graminoid', 'heath', 'other', 'sand',
+               'soil', 'tree'],
+              [0, 1, 2, 3, 4, 5, 6, 7]),
+    'taxo6': (['bush', 'deadwood', 'graminoid', 'heath', 'ground', 'tree'],
+              [0, 1, 2, 3, IGNORE_INDEX, 4, 4, 5]),
+    'binary': (['rest', 'gehoelz'],
+               [1, 0, 0, 0, IGNORE_INDEX, 0, 0, 1]),
+}
+
+SCHEMA = os.environ.get('HEATH_SCHEMA', 'taxo6')
+if SCHEMA not in _SCHEMAS:
+    raise ValueError(f'Unbekanntes HEATH_SCHEMA "{SCHEMA}", erlaubt: {list(_SCHEMAS)}')
+
+CLASS_NAMES = _SCHEMAS[SCHEMA][0]
+NUM_CLASSES = len(CLASS_NAMES)
+_LABEL_MAP = np.array(_SCHEMAS[SCHEMA][1], dtype=np.int64)
 
 # Per-Punkt-Qualitaetsgewicht aus shadow/overexposed/confidence
 CONFIDENCE_MAX     = 10     
@@ -35,9 +52,10 @@ class HeideDatasetV2(Dataset):
         for fname in tile_list:
             data = np.loadtxt(os.path.join(tile_dir, fname), dtype=np.float32)
 
-            # Spaltenzahl bestimmt die Featureanzahl: 6 nur RGB oder 7 mit NIR.
-            # Danach folgen label, shadow, overexposed, confidence.
-            n_feat = 7 if data.shape[1] >= 11 else 6
+            # Die letzten vier Spalten sind immer label, shadow, overexposed
+            # und confidence. Alles davor sind Merkmale. Damit funktionieren
+            # 6 (RGB), 7 (RGB+NIR) und 9 (RGB+NIR+z_rel+z_range) ohne Aenderung.
+            n_feat = data.shape[1] - 4
 
             points = data[:, :n_feat].copy()            
             labels = _LABEL_MAP[data[:, n_feat].astype(np.int64)]  
@@ -54,6 +72,7 @@ class HeideDatasetV2(Dataset):
             self.points_list.append(points)
             self.labels_list.append(labels)
             self.weight_list.append(w)
+            self.n_feat = n_feat 
 
     def __len__(self):
         return len(self.tile_list)

@@ -125,7 +125,8 @@ def main(args):
     shutil.copy('models/%s.py' % args.model, str(experiment_dir))
     shutil.copy('models/pointnet2_utils.py', str(experiment_dir))
 
-    classifier = MODEL.get_model(NUM_CLASSES).to(device)
+    log_string('Merkmale je Punkt: %d' % train_ds.n_feat)
+    classifier = MODEL.get_model(NUM_CLASSES, in_channel=train_ds.n_feat).to(device)
     classifier.apply(inplace_relu)
 
     def weights_init(m):

@@ -38,7 +38,8 @@ print(f'{args.split}-Tiles: {len(tile_list)}')
 ds     = HeideDatasetV2(args.tile_dir, tile_list, augment=False)
 loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-model = get_model(NUM_CLASSES).to(device)
+print(f'Merkmale je Punkt: {ds.n_feat}')
+model = get_model(NUM_CLASSES, in_channel=ds.n_feat).to(device)
 ckpt = torch.load(args.model_path, map_location=device, weights_only=False)
 state = ckpt['model_state_dict'] if 'model_state_dict' in ckpt else ckpt
 model.load_state_dict(state)

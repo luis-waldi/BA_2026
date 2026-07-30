@@ -237,7 +237,41 @@ library(lidR)
 library(sf)
 las_norm <- readLAS("/Users/luis/Documents/BA/data/processed/tiles_csf_knnidw_final_v3.laz")
 
-output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v3_nir/"
+# --- Lokale Hoehenmerkmale --------------------------------------------------
+# Zwei zusaetzliche Attribute je Punkt, die die Bestandsstruktur beschreiben.
+# Sie werden auf der vollstaendigen Punktwolke berechnet und nicht erst auf den
+# ausgeduennten Kacheln, damit die Nachbarschaften die reale Punktdichte haben.
+#   z_range: Hoehenspanne in der 0.5-m-Umgebung. Gross bei Bueschen mit Aesten
+#            und Luecken, klein im geschlossenen Heideteppich, nahe null auf
+#            offenem Boden.
+#   z_rel: Relative Höhe des Punktes zur Medianhöhe der Umgebung in 2.5 m.
+#        Positive Werte deuten auf herausragende Strukturen hin und helfen,
+#        Büsche von flächigem Heidebestand zu unterscheiden.
+px_fun <- if ("pixel_metrics" %in% getNamespaceExports("lidR")) {
+  lidR::pixel_metrics
+} else {
+  lidR::grid_metrics
+}
+m05 <- px_fun(las_norm, ~list(zrange = max(Z) - min(Z), zmed = median(Z)),
+              res = 0.5)
+m05 <- terra::rast(m05)  
+
+# 5 x 0.5 m = 2.5 m Fenster als weitere Umgebung
+zmed_umgebung <- terra::focal(m05[["zmed"]], w = matrix(1, 5, 5),
+                              fun = median, na.rm = TRUE)
+
+xy      <- cbind(las_norm@data$X, las_norm@data$Y)
+z_range <- terra::extract(m05[["zrange"]], xy)[, 1]
+z_med_u <- terra::extract(zmed_umgebung,   xy)[, 1]
+
+las_norm@data$z_range <- ifelse(is.na(z_range), 0, z_range)
+las_norm@data$z_rel   <- ifelse(is.na(z_med_u), 0, las_norm@data$Z - z_med_u)
+
+cat("Hoehenmerkmale berechnet. z_range:",
+    round(quantile(las_norm@data$z_range, c(0.5, 0.95)), 2),
+    "| z_rel:", round(quantile(las_norm@data$z_rel, c(0.5, 0.95)), 2), "\n")
+
+output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v4/"
 dir.create(output_dir, showWarnings = FALSE)
 # alte Tiles entfernen, damit ein neuer Lauf sauber startet
 file.remove(list.files(output_dir, pattern = "\\.txt$", full.names = TRUE))
@@ -253,7 +287,7 @@ label_map <- c("1"=0,"2"=1,"3"=2,"4"=3,"5"=4,"6"=5,"7"=6,"8"=7,"9"=8)
 # Schneise I (tile 1-8) grenzt aneinander und laeuft als ein durchgehendes
 # Raster, so entstehen keine Ueberlappungen an Tile-Grenzen. Alle uebrigen
 # Tiles liegen isoliert und bilden je einen eigenen Bereich.
-# Der Bereichsname wird spaeter dem Dateinamen vorangestellt (rn__NNNN.txt),
+# Der Bereichsname wird spaeter dem Dateinamen vorangestellt,
 # damit make_splits.py ganze Bereiche einem Split zuordnen kann.
 dir_labeled <- "/Users/luis/Documents/BA/data/labeled"
 regions <- list(
@@ -276,6 +310,11 @@ regions <- list(
 )
 
 tile_count <- 0; skipped <- 0
+
+# Kachelursprung je Kachel mitschreiben. Die Punkte selbst bleiben auf die
+# Fenstermitte zentriert, weil das Netz keine absoluten Koordinaten lernen soll.
+# Fuer die spaetere Rasterisierung muss die Lage aber rekonstruierbar sein.
+offsets <- list()
 
 buffer <- tile_size  # Puffer zwischen Bloecken
 
@@ -330,19 +369,41 @@ for (rn in names(regions)) {
         nir_norm <- pts$nir/65535
         labels <- label_map[as.character(pts$Classification)]
 
-        # Spalten: x, y, z, R, G, B, NIR, label, shadow, overexposed, confidence
+        # Spalten: x, y, z, R, G, B, NIR, z_rel, z_range,
+        #          label, shadow, overexposed, confidence
+        # Die vier letzten Spalten muessen am Ende stehen, der Dataloader
+        # leitet die Merkmalszahl aus der Spaltenzahl - 4 ab.
         mat <- cbind(x_centered, y_centered, pts$Z,
                      r_norm, g_norm, b_norm, nir_norm,
+                     pts$z_rel, pts$z_range,
                      labels,
                      pts$shadow, pts$overexposed, pts$confidence)
 
         tile_count <- tile_count + 1
         k <- k + 1
         # Blockname vorangestellt, damit make_splits.py je Block splitten kann
-        fname <- sprintf("%s/%s__%04d.txt", output_dir, blk$name, k)
+        base <- sprintf("%s__%04d.txt", blk$name, k)
+        fname <- sprintf("%s/%s", output_dir, base)
         write.table(mat, fname, row.names=FALSE, col.names=FALSE, sep=" ")
+
+        offsets[[length(offsets) + 1]] <- data.frame(
+          tile      = base,
+          region    = rn,
+          block     = blk$name,
+          x_origin  = xi,
+          y_origin  = yi,
+          tile_size = tile_size,
+          n_points  = n_points,
+          stringsAsFactors = FALSE
+        )
       }
     }
   }
 }
 cat("Tiles:", tile_count, "| uebersprungen:", skipped, "\n")
+
+# Begleittabelle mit dem Ursprung jeder Kachel, wird fuer die Rasterisierung
+# des Verbuschungsgrades gebraucht.
+offsets_df <- do.call(rbind, offsets)
+write.csv(offsets_df, file.path(output_dir, "tile_offsets.csv"), row.names = FALSE)
+cat("tile_offsets.csv geschrieben:", nrow(offsets_df), "Zeilen\n")
