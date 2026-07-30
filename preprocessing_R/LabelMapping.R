@@ -237,39 +237,48 @@ library(lidR)
 library(sf)
 las_norm <- readLAS("/Users/luis/Documents/BA/data/processed/tiles_csf_knnidw_final_v3.laz")
 
-# --- Lokale Hoehenmerkmale --------------------------------------------------
-# Zwei zusaetzliche Attribute je Punkt, die die Bestandsstruktur beschreiben.
-# Sie werden auf der vollstaendigen Punktwolke berechnet und nicht erst auf den
-# ausgeduennten Kacheln, damit die Nachbarschaften die reale Punktdichte haben.
-#   z_range: Hoehenspanne in der 0.5-m-Umgebung. Gross bei Bueschen mit Aesten
-#            und Luecken, klein im geschlossenen Heideteppich, nahe null auf
-#            offenem Boden.
-#   z_rel: Relative Höhe des Punktes zur Medianhöhe der Umgebung in 2.5 m.
-#        Positive Werte deuten auf herausragende Strukturen hin und helfen,
-#        Büsche von flächigem Heidebestand zu unterscheiden.
+# --- Lokale Hoehenmerkmale ---
+# Zwei Strukturattribute je Punkt, die die Hoehe allein nicht liefert:
+#   z_range  Hoehenspanne in der 0.5-m-Umgebung. Gross bei Bueschen mit Aesten
+#            und Luecken, klein im geschlossenen Heideteppich, null auf Sand.
+#   z_rel    Hoehe ueber der medianen Hoehe der 2.5-m-Umgebung. Positiv, wenn
+#            der Punkt herausragt, nahe null im flaechigen Bestand.
+# Berechnung auf der vollen Punktdichte, nicht auf den ausgeduennten Kacheln.
+# Je Bereich, da ein durchgehendes 0.5-m-Raster ueber Authausen und Cuxhaven
+# zusammen den Integer-Bereich von ncell() sprengt.
+HEIGHT_CLIP <- 5  # m, Obergrenze fuer z_range und z_rel
+
 px_fun <- if ("pixel_metrics" %in% getNamespaceExports("lidR")) {
-  lidR::pixel_metrics
+  lidR::pixel_metrics   # lidR >= 4
 } else {
-  lidR::grid_metrics
+  lidR::grid_metrics    # lidR 3.x
 }
-m05 <- px_fun(las_norm, ~list(zrange = max(Z) - min(Z), zmed = median(Z)),
-              res = 0.5)
-m05 <- terra::rast(m05)  
 
-# 5 x 0.5 m = 2.5 m Fenster als weitere Umgebung
-zmed_umgebung <- terra::focal(m05[["zmed"]], w = matrix(1, 5, 5),
-                              fun = median, na.rm = TRUE)
+add_height_features <- function(las) {
+  m05 <- px_fun(las, ~list(zrange = max(Z) - min(Z), zmed = median(Z)),
+                res = 0.5)
+  if (!inherits(m05, "SpatRaster")) m05 <- terra::rast(m05)
 
-xy      <- cbind(las_norm@data$X, las_norm@data$Y)
-z_range <- terra::extract(m05[["zrange"]], xy)[, 1]
-z_med_u <- terra::extract(zmed_umgebung,   xy)[, 1]
+  # 5 x 0.5 m = 2.5 m Fenster als weitere Umgebung
+  zmed_umgebung <- terra::focal(m05[["zmed"]], w = matrix(1, 5, 5),
+                                fun = median, na.rm = TRUE)
 
-las_norm@data$z_range <- ifelse(is.na(z_range), 0, z_range)
-las_norm@data$z_rel   <- ifelse(is.na(z_med_u), 0, las_norm@data$Z - z_med_u)
+  xy      <- cbind(las@data$X, las@data$Y)
+  z_range <- terra::extract(m05[["zrange"]], xy)[, 1]
+  z_med_u <- terra::extract(zmed_umgebung,   xy)[, 1]
 
-cat("Hoehenmerkmale berechnet. z_range:",
-    round(quantile(las_norm@data$z_range, c(0.5, 0.95)), 2),
-    "| z_rel:", round(quantile(las_norm@data$z_rel, c(0.5, 0.95)), 2), "\n")
+  z_range <- ifelse(is.na(z_range), 0, z_range)
+  z_rel   <- ifelse(is.na(z_med_u), 0, las@data$Z - z_med_u)
+
+  # Kappung bei HEIGHT_CLIP: darueber trennen die Merkmale nur noch Baum von
+  # Baum, was bereits ueber Z und die Klasse tree abgedeckt ist. Passend zur
+  # Schwellenwertregel oben, nach der bush ab 3.5 m zu tree wird. Ungekappt
+  # reicht z_range bis ueber 20 m und drueckt den relevanten Bereich zwischen
+  # Heide (rund 0.1 m) und Busch (rund 1 m) zusammen.
+  las@data$z_range <- pmin(z_range, HEIGHT_CLIP)
+  las@data$z_rel   <- pmax(pmin(z_rel, HEIGHT_CLIP), -HEIGHT_CLIP)
+  las
+}
 
 output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v4/"
 dir.create(output_dir, showWarnings = FALSE)
@@ -311,9 +320,10 @@ regions <- list(
 
 tile_count <- 0; skipped <- 0
 
-# Kachelursprung je Kachel mitschreiben. Die Punkte selbst bleiben auf die
-# Fenstermitte zentriert, weil das Netz keine absoluten Koordinaten lernen soll.
-# Fuer die spaetere Rasterisierung muss die Lage aber rekonstruierbar sein.
+# Kachelursprung mitschreiben. Die Punkte bleiben auf die Fenstermitte
+# zentriert, das Netz soll keine absoluten Koordinaten lernen. Fuer die
+# Rasterisierung des Verbuschungsgrades muss die Lage rekonstruierbar sein:
+# X_absolut = x_centered + x_origin + tile_size/2, analog fuer Y.
 offsets <- list()
 
 buffer <- tile_size  # Puffer zwischen Bloecken
@@ -331,6 +341,14 @@ for (rn in names(regions)) {
   las_region <- filter_poi(las_norm,
       X >= xmin & X <= xmax & Y >= ymin & Y <= ymax)
   if (nrow(las_region@data) == 0) next
+
+  las_region <- add_height_features(las_region)
+  cat(rn, "| z_range Median/p95:",
+      round(quantile(las_region@data$z_range, c(0.5, 0.95)), 2),
+      "| z_rel Median/p95:",
+      round(quantile(las_region@data$z_rel, c(0.5, 0.95)), 2),
+      "| gekappt:",
+      round(100 * mean(las_region@data$z_range >= HEIGHT_CLIP), 1), "%\n")
 
   # Schneise I in 3 X-Bloecke mit Puffer teilen, damit das Gebiet in
   # train/val/test vertreten ist. Der Puffer verhindert, dass ein Fenster ueber
@@ -371,8 +389,8 @@ for (rn in names(regions)) {
 
         # Spalten: x, y, z, R, G, B, NIR, z_rel, z_range,
         #          label, shadow, overexposed, confidence
-        # Die vier letzten Spalten muessen am Ende stehen, der Dataloader
-        # leitet die Merkmalszahl aus der Spaltenzahl - 4 ab.
+        # Reihenfolge fix: der Dataloader liest die Merkmalszahl als
+        # Spaltenzahl - 4, die letzten vier Spalten sind keine Merkmale.
         mat <- cbind(x_centered, y_centered, pts$Z,
                      r_norm, g_norm, b_norm, nir_norm,
                      pts$z_rel, pts$z_range,
@@ -402,8 +420,7 @@ for (rn in names(regions)) {
 }
 cat("Tiles:", tile_count, "| uebersprungen:", skipped, "\n")
 
-# Begleittabelle mit dem Ursprung jeder Kachel, wird fuer die Rasterisierung
-# des Verbuschungsgrades gebraucht.
+# Begleittabelle mit dem Ursprung jeder Kachel
 offsets_df <- do.call(rbind, offsets)
 write.csv(offsets_df, file.path(output_dir, "tile_offsets.csv"), row.names = FALSE)
 cat("tile_offsets.csv geschrieben:", nrow(offsets_df), "Zeilen\n")

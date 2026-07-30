@@ -4,15 +4,14 @@ from torch.utils.data import Dataset
 
 IGNORE_INDEX = 255
 
-# Klassenschema ueber die Umgebungsvariable HEATH_SCHEMA umschaltbar, damit
-# Trainings- und Auswertungsskripte unveraendert bleiben:
-#   HEATH_SCHEMA=taxo8   8 Klassen, Originalschema der Baseline (run01-run03)
-#   HEATH_SCHEMA=taxo6   6 Klassen, sand+soil zu ground, other ignoriert
-#   HEATH_SCHEMA=binary  2 Klassen, Gehoelz (bush+tree) gegen alles andere
-# Rohlabels: 0 bush, 1 deadwood, 2 graminoid, 3 heath, 4 other, 5 sand,
-# 6 soil, 7 tree.
+# Klassenschema per Umgebungsvariable HEATH_SCHEMA, damit Trainings- und
+# Auswertungsskript fuer alle Varianten unveraendert bleiben.
+#   taxo8   Originalschema der Baseline, 8 Klassen (run01 bis run03)
+#   taxo6   sand und soil zu "ground", other ignoriert, 6 Klassen (run04)
+#   binary  Gehoelz gegen alles andere, 2 Klassen
+# Zuordnung der Rohlabels in der Reihenfolge
+# bush, deadwood, graminoid, heath, other, sand, soil, tree.
 _SCHEMAS = {
-    # bush, deadwood, graminoid, heath, other, sand, soil, tree
     'taxo8': (['bush', 'deadwood', 'graminoid', 'heath', 'other', 'sand',
                'soil', 'tree'],
               [0, 1, 2, 3, 4, 5, 6, 7]),
@@ -24,7 +23,7 @@ _SCHEMAS = {
 
 SCHEMA = os.environ.get('HEATH_SCHEMA', 'taxo6')
 if SCHEMA not in _SCHEMAS:
-    raise ValueError(f'Unbekanntes HEATH_SCHEMA "{SCHEMA}", erlaubt: {list(_SCHEMAS)}')
+    raise ValueError(f'HEATH_SCHEMA "{SCHEMA}" unbekannt, erlaubt: {list(_SCHEMAS)}')
 
 CLASS_NAMES = _SCHEMAS[SCHEMA][0]
 NUM_CLASSES = len(CLASS_NAMES)
@@ -52,9 +51,9 @@ class HeideDatasetV2(Dataset):
         for fname in tile_list:
             data = np.loadtxt(os.path.join(tile_dir, fname), dtype=np.float32)
 
-            # Die letzten vier Spalten sind immer label, shadow, overexposed
-            # und confidence. Alles davor sind Merkmale. Damit funktionieren
-            # 6 (RGB), 7 (RGB+NIR) und 9 (RGB+NIR+z_rel+z_range) ohne Aenderung.
+            # Die letzten vier Spalten sind label, shadow, overexposed und
+            # confidence, alles davor sind Features: 6 nur RGB, 7 mit NIR,
+            # 9 zusaetzlich mit z_rel und z_range.
             n_feat = data.shape[1] - 4
 
             points = data[:, :n_feat].copy()            

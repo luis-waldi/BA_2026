@@ -23,7 +23,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import provider
-from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES, IGNORE_INDEX
+from data_utils.heath_dataset_v2 import (HeideDatasetV2, NUM_CLASSES, CLASS_NAMES,
+                                         IGNORE_INDEX, SCHEMA)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(BASE_DIR, 'models'))
@@ -125,7 +126,7 @@ def main(args):
     shutil.copy('models/%s.py' % args.model, str(experiment_dir))
     shutil.copy('models/pointnet2_utils.py', str(experiment_dir))
 
-    log_string('Merkmale je Punkt: %d' % train_ds.n_feat)
+    log_string('Schema: %s  Features je Punkt: %d' % (SCHEMA, train_ds.n_feat))
     classifier = MODEL.get_model(NUM_CLASSES, in_channel=train_ds.n_feat).to(device)
     classifier.apply(inplace_relu)
 

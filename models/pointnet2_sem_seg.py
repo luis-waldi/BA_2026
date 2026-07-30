@@ -4,9 +4,9 @@ from models.pointnet2_utils import PointNetSetAbstraction,PointNetFeaturePropaga
 
 
 class get_model(nn.Module):
+    # in_channel: Features je Punkt. 6 = xyz+RGB, 7 = zusaetzlich NIR,
+    # 9 = zusaetzlich z_rel und z_range.
     def __init__(self, num_classes, in_channel=7):
-        # in_channel = Zahl der Eingangsmerkmale je Punkt:
-        # 6 = x,y,z,R,G,B | 7 = zusaetzlich NIR | 9 = zusaetzlich z_rel,z_range
         super(get_model, self).__init__()
         self.sa1 = PointNetSetAbstraction(1024, 0.1, 32, in_channel + 3, [32, 32, 64], False)
         self.sa2 = PointNetSetAbstraction(256, 0.2, 32, 64 + 3, [64, 64, 128], False)
