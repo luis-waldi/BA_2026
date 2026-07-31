@@ -126,7 +126,8 @@ def main(args):
     shutil.copy('models/%s.py' % args.model, str(experiment_dir))
     shutil.copy('models/pointnet2_utils.py', str(experiment_dir))
 
-    log_string('Schema: %s  Features je Punkt: %d' % (SCHEMA, train_ds.n_feat))
+    log_string('Schema: %s  Features je Punkt: %d  Radien: %s %s'
+               % (SCHEMA, train_ds.n_feat, MODEL.RADII_NAME, MODEL.RADII))
     classifier = MODEL.get_model(NUM_CLASSES, in_channel=train_ds.n_feat).to(device)
     classifier.apply(inplace_relu)
 

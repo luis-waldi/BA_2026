@@ -1,6 +1,27 @@
+import os
+
 import torch.nn as nn
 import torch.nn.functional as F
 from models.pointnet2_utils import PointNetSetAbstraction,PointNetFeaturePropagation
+
+# Radien der vier Set-Abstraction-Layer, per Umgebungsvariable HEATH_RADII
+# umschaltbar. Die Radien wirken nur auf die Nachbarschaftssuche, nicht auf
+# die Gewichte, alte Checkpoints bleiben also ladbar.
+#   default  Werte der S3DIS-Vorlage
+#   wide     an die Punktdichte der Heidekacheln angepasst
+# Gemessen an echten Kacheln mit 4096 Punkten je 10x10-m-Fenster liegen im
+# Median 1 Punkt in r=0.10 m, 5 in r=0.25 m und 12 in r=0.40 m. Die erste
+# Schicht sucht 32 Nachbarn und findet mit dem Standardradius nur sich
+# selbst, die fehlenden Plaetze werden mit Kopien des Mittelpunkts gefuellt.
+_RADII = {
+    'default': (0.1, 0.2, 0.4, 0.8),
+    'wide':    (0.25, 0.5, 1.0, 2.0),
+}
+
+RADII_NAME = os.environ.get('HEATH_RADII', 'default')
+if RADII_NAME not in _RADII:
+    raise ValueError(f'HEATH_RADII "{RADII_NAME}" unbekannt, erlaubt: {list(_RADII)}')
+RADII = _RADII[RADII_NAME]
 
 
 class get_model(nn.Module):
@@ -8,10 +29,11 @@ class get_model(nn.Module):
     # 9 = zusaetzlich z_rel und z_range.
     def __init__(self, num_classes, in_channel=7):
         super(get_model, self).__init__()
-        self.sa1 = PointNetSetAbstraction(1024, 0.1, 32, in_channel + 3, [32, 32, 64], False)
-        self.sa2 = PointNetSetAbstraction(256, 0.2, 32, 64 + 3, [64, 64, 128], False)
-        self.sa3 = PointNetSetAbstraction(64, 0.4, 32, 128 + 3, [128, 128, 256], False)
-        self.sa4 = PointNetSetAbstraction(16, 0.8, 32, 256 + 3, [256, 256, 512], False)
+        r1, r2, r3, r4 = RADII
+        self.sa1 = PointNetSetAbstraction(1024, r1, 32, in_channel + 3, [32, 32, 64], False)
+        self.sa2 = PointNetSetAbstraction(256, r2, 32, 64 + 3, [64, 64, 128], False)
+        self.sa3 = PointNetSetAbstraction(64, r3, 32, 128 + 3, [128, 128, 256], False)
+        self.sa4 = PointNetSetAbstraction(16, r4, 32, 256 + 3, [256, 256, 512], False)
         self.fp4 = PointNetFeaturePropagation(768, [256, 256])
         self.fp3 = PointNetFeaturePropagation(384, [256, 256])
         self.fp2 = PointNetFeaturePropagation(320, [256, 128])

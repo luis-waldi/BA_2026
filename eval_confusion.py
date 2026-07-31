@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
 sys.path.append('./models')
-from models.pointnet2_sem_seg import get_model
+from models.pointnet2_sem_seg import get_model, RADII, RADII_NAME
 from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES, SCHEMA
 
 
@@ -61,7 +61,7 @@ print(f'{args.split}-Tiles: {len(tile_list)}')
 ds     = HeideDatasetV2(args.tile_dir, tile_list, augment=False)
 loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-print(f'Schema: {SCHEMA}  Features je Punkt: {ds.n_feat}')
+print(f'Schema: {SCHEMA}  Features je Punkt: {ds.n_feat}  Radien: {RADII_NAME} {RADII}')
 model = get_model(NUM_CLASSES, in_channel=ds.n_feat).to(device)
 ckpt = torch.load(args.model_path, map_location=device, weights_only=False)
 state = ckpt['model_state_dict'] if 'model_state_dict' in ckpt else ckpt
