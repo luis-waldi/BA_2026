@@ -21,10 +21,33 @@ def parse_args():
                    default='./log/sem_seg/run01/checkpoints/best_model.pth')
     p.add_argument('--split', type=str, default='test', help='train, val oder test')
     p.add_argument('--batch_size', type=int, default=8)
+    p.add_argument('--out', type=str, default=None,
+                   help='Protokolldatei [default: <run>_eval_<split>.txt]')
     return p.parse_args()
 
 
+class Tee:
+    """Ausgabe gleichzeitig auf die Konsole und in eine Datei."""
+
+    def __init__(self, path):
+        self.stream = sys.stdout
+        self.file = open(path, 'w')
+
+    def write(self, text):
+        self.stream.write(text)
+        self.file.write(text)
+
+    def flush(self):
+        self.stream.flush()
+        self.file.flush()
+
+
 args = parse_args()
+
+# Laufname aus dem Checkpoint-Pfad: log/sem_seg/<run>/checkpoints/best_model.pth
+run_name = os.path.basename(os.path.dirname(os.path.dirname(args.model_path)))
+out_path = args.out or f'{run_name}_eval_{args.split}.txt'
+sys.stdout = Tee(out_path)
 
 device = torch.device('mps' if torch.backends.mps.is_available()
                       else 'cuda' if torch.cuda.is_available() else 'cpu')
@@ -117,3 +140,25 @@ errors.sort(reverse=True)
 print(f'  {"Punkte":>10s}  {"True":12s} -> {"Pred":12s}')
 for count, true_cls, pred_cls in errors[:10]:
     print(f'  {count:10d}  {true_cls:12s} -> {pred_cls:12s}')
+
+# Gehoelz gegen Rest, unabhaengig vom trainierten Schema. Erlaubt den
+# Vergleich mit dem binaeren Modell und ist die fuer den Verbuschungsgrad
+# relevante Groesse.
+if SCHEMA in ('taxo6', 'taxo8'):
+    geh = [i for i, n in enumerate(CLASS_NAMES) if n in ('bush', 'tree')]
+    rest = [i for i in range(NUM_CLASSES) if i not in geh]
+    tp = conf_mat[np.ix_(geh, geh)].sum()
+    fn = conf_mat[np.ix_(geh, rest)].sum()
+    fp = conf_mat[np.ix_(rest, geh)].sum()
+    tn = conf_mat[np.ix_(rest, rest)].sum()
+    prec = tp / max(tp + fp, 1)
+    rec = tp / max(tp + fn, 1)
+    print('\n--- Gehoelz (bush+tree) gegen Rest, nachtraeglich zusammengefasst ---')
+    print(f'  IoU Gehoelz  = {tp / max(tp + fp + fn, 1):.4f}')
+    print(f'  IoU Rest     = {tn / max(tn + fp + fn, 1):.4f}')
+    print(f'  Precision    = {prec:.4f}')
+    print(f'  Recall       = {rec:.4f}')
+    print(f'  F1           = {2 * prec * rec / max(prec + rec, 1e-9):.4f}')
+
+sys.stdout.flush()
+print(f'\nProtokoll geschrieben: {out_path}')
