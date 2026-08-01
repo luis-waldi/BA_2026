@@ -27,7 +27,10 @@ class get_model(nn.Module):
         super(get_model, self).__init__()
         r1, r2, r3, r4 = RADII
 
-        self.sa1 = PointNetSetAbstractionMsg(1024, r1, [16, 32], in_channel + 3, [[16, 16, 32], [32, 32, 64]])
+        # PointNetSetAbstractionMsg rechnet die drei xyz-Kanaele intern selbst
+        # dazu (last_channel = in_channel + 3), anders als PointNetSetAbstraction
+        # im SSG-Modell. Hier wird deshalb in_channel ohne Aufschlag uebergeben.
+        self.sa1 = PointNetSetAbstractionMsg(1024, r1, [16, 32], in_channel, [[16, 16, 32], [32, 32, 64]])
         self.sa2 = PointNetSetAbstractionMsg(256, r2, [16, 32], 32+64, [[64, 64, 128], [64, 96, 128]])
         self.sa3 = PointNetSetAbstractionMsg(64, r3, [16, 32], 128+128, [[128, 196, 256], [128, 196, 256]])
         self.sa4 = PointNetSetAbstractionMsg(16, r4, [16, 32], 256+256, [[256, 256, 512], [256, 384, 512]])
