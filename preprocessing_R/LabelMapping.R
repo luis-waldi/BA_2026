@@ -280,13 +280,17 @@ add_height_features <- function(las) {
   las
 }
 
-output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v4/"
+output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v5/"
 dir.create(output_dir, showWarnings = FALSE)
 # alte Tiles entfernen, damit ein neuer Lauf sauber startet
 file.remove(list.files(output_dir, pattern = "\\.txt$", full.names = TRUE))
 
 set.seed(42)  # reproduzierbares Sampling der Punkte je Kachel
-tile_size <- 10; stride <- 5; n_points <- 4096
+# n_points von 4096 auf 8192 erhoeht. Die Rohwolke hat 113 (Authausen) bis
+# 184 (Cuxhaven) Punkte je m2, ein 10x10-m-Fenster enthaelt im Median 9700
+# bis 12800 Punkte. Mit 4096 blieben davon nur 32 bis 42 Prozent uebrig, was
+# die Nachbarschaftssuche der ersten Schichten aushungert.
+tile_size <- 10; stride <- 5; n_points <- 8192
 # label_map: class_id -> 0-indexiertes Label fuer PointNet++.
 # An die Klassenreihenfolge in class_levels gekoppelt.
 # water reserviert, Label 8 erst mit water-Daten.
@@ -372,13 +376,13 @@ for (rn in names(regions)) {
 
         tile <- filter_poi(las_region,
                            X >= xi & X < (xi+tile_size) & Y >= yi & Y < (yi+tile_size))
-        if (nrow(tile@data) < 100) { skipped <- skipped + 1; next }
+        # Mindestpunktzahl ist n_points. Fenster am Rand eines gelabelten
+        # Bereichs sind nur teilweise belegt und wurden bisher mit Kopien
+        # derselben Punkte aufgefuellt, das betraf 12 bis 17 Prozent der
+        # Kacheln. Sie werden jetzt verworfen.
+        if (nrow(tile@data) < n_points) { skipped <- skipped + 1; next }
 
-        if (nrow(tile@data) >= n_points) {
-          idx <- sample(nrow(tile@data), n_points, replace = FALSE)
-        } else {
-          idx <- sample(nrow(tile@data), n_points, replace = TRUE)
-        }
+        idx <- sample(nrow(tile@data), n_points, replace = FALSE)
         pts <- tile@data[idx, ]
 
         x_centered <- pts$X - (xi + tile_size/2)
