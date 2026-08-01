@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import argparse
+import importlib
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -9,12 +10,13 @@ from torch.utils.data import DataLoader
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
 sys.path.append('./models')
-from models.pointnet2_sem_seg import get_model, RADII, RADII_NAME
 from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES, SCHEMA
 
 
 def parse_args():
     p = argparse.ArgumentParser('Auswertung PointNet++ Heide')
+    p.add_argument('--model', type=str, default='pointnet2_sem_seg',
+                   help='Modelldatei in models/, muss zum Training passen')
     p.add_argument('--tile_dir', type=str,
                    default='/Users/luis/Documents/BA/data/processed/training_tiles_v3')
     p.add_argument('--model_path', type=str,
@@ -61,8 +63,10 @@ print(f'{args.split}-Tiles: {len(tile_list)}')
 ds     = HeideDatasetV2(args.tile_dir, tile_list, augment=False)
 loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-print(f'Schema: {SCHEMA}  Features je Punkt: {ds.n_feat}  Radien: {RADII_NAME} {RADII}')
-model = get_model(NUM_CLASSES, in_channel=ds.n_feat).to(device)
+MODEL = importlib.import_module(f'models.{args.model}')
+print(f'Modell: {args.model}  Schema: {SCHEMA}  Features je Punkt: {ds.n_feat}'
+      f'  Radien: {MODEL.RADII_NAME} {MODEL.RADII}')
+model = MODEL.get_model(NUM_CLASSES, in_channel=ds.n_feat).to(device)
 ckpt = torch.load(args.model_path, map_location=device, weights_only=False)
 state = ckpt['model_state_dict'] if 'model_state_dict' in ckpt else ckpt
 model.load_state_dict(state)
