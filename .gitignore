@@ -1,3 +1,9 @@
+# Trainingsartefakte (Checkpoints, TensorBoard-Logs), nicht versionieren
+log/
+logs/
+*.pth
+events.out.tfevents.*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -216,3 +222,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS Systemdateien
+.DS_Store
+**/.DS_Store

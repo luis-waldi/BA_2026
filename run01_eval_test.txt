@@ -1,0 +1,55 @@
+Device: cuda
+test-Tiles: 487
+Modell geladen: log/sem_seg/run01/checkpoints/best_model.pth (Epoche 53, mIoU=0.3555)
+
+--- Confusion Matrix (Zeile=True, Spalte=Pred) ---
+            bush        deadwood    graminoid   heath       other       sand        soil        tree        
+------------------------------------------------------------------------------------------------------------
+bush              201333         190      190983       51636         275         242         440       15375
+deadwood            2024         210        3131        4775         228         716         306        1676
+graminoid          25307         599      217992      243721          38        2319         444           0
+heath               7777        1041       57995      137710         527        2154         694           0
+other                  0           0          17           9           5          14           2           0
+sand                  16           9           4         972          48         214          18           0
+soil                 141         106        4877       16947         504        2062         882           0
+tree               15037          28           0           0           3           0           0      780979
+
+--- Confusion Matrix normalisiert (% der wahren Klasse) ---
+            bush        deadwood    graminoid   heath       other       sand        soil        tree        
+------------------------------------------------------------------------------------------------------------
+bush               43.7%        0.0%       41.5%       11.2%        0.1%        0.1%        0.1%        3.3%
+deadwood           15.5%        1.6%       24.0%       36.5%        1.7%        5.5%        2.3%       12.8%
+graminoid           5.2%        0.1%       44.5%       49.7%        0.0%        0.5%        0.1%        0.0%
+heath               3.7%        0.5%       27.9%       66.2%        0.3%        1.0%        0.3%        0.0%
+other               0.0%        0.0%       36.2%       19.1%       10.6%       29.8%        4.3%        0.0%
+sand                1.2%        0.7%        0.3%       75.9%        3.7%       16.7%        1.4%        0.0%
+soil                0.6%        0.4%       19.1%       66.4%        2.0%        8.1%        3.5%        0.0%
+tree                1.9%        0.0%        0.0%        0.0%        0.0%        0.0%        0.0%       98.1%
+
+--- Accuracy und IoU je Klasse ---
+  Klasse         Accuracy        IoU   wahre Punkte
+  bush             0.4372     0.3942         460474
+  deadwood         0.0161     0.0140          13066
+  graminoid        0.4445     0.2917         490420
+  heath            0.6624     0.2618         207898
+  other            0.1064     0.0030             47
+  sand             0.1671     0.0244           1281
+  soil             0.0346     0.0322          25519
+  tree             0.9811     0.9605         796047
+
+  Overall Accuracy      = 0.6714
+  mittlere Accuracy     = 0.3562
+  mIoU (Mittel je Klasse) = 0.2477
+
+--- Top-10 Verwechslungen ---
+      Punkte  True         -> Pred        
+      243721  graminoid    -> heath       
+      190983  bush         -> graminoid   
+       57995  heath        -> graminoid   
+       51636  bush         -> heath       
+       25307  graminoid    -> bush        
+       16947  soil         -> heath       
+       15375  bush         -> tree        
+       15037  tree         -> bush        
+        7777  heath        -> bush        
+        4877  soil         -> graminoid   

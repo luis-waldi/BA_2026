@@ -1,10 +1,4 @@
-"""
-train_heath.py
-Trainiert PointNet++ auf dem Heide-Datensatz zur semantischen Segmentierung.
-"""
 import os
-# MPS-Fallback aktivieren: erlaubt CPU-Ausweichen fuer Ops, die Apple Silicon
-# (noch) nicht unterstuetzt. MUSS vor dem torch-Import gesetzt werden.
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
 import json
@@ -14,14 +8,12 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-# Importiere PointNet++ Architektur und den DataLoader
 from models.pointnet2_sem_seg import get_model, get_loss
 from data_utils.heath_dataset import HeideDataset, NUM_CLASSES, CLASS_NAMES
 
-# Hyperparameter (Stellschrauben fuer das Training)
-BATCH_SIZE = 8       # Wie viele Kacheln gleichzeitig gelernt werden
-EPOCHS = 32          # Wie oft das Netzwerk den gesamten Datensatz sieht
-LEARNING_RATE = 1e-3 # Wie schnell das Netzwerk lernt
+BATCH_SIZE = 8
+EPOCHS = 32
+LEARNING_RATE = 1e-3
 TILE_DIR = '/Users/luis/Documents/BA/training_tiles'
 LOG_DIR = './logs/heath_run1'
 
@@ -36,14 +28,13 @@ def calculate_iou(pred, target, num_classes):
 
         denom = tp + fp + fn
         if denom == 0:
-            iou_list.append(np.nan)  # Klasse in dieser Kachel nicht vorhanden
+            iou_list.append(np.nan)
         else:
             iou_list.append(tp / denom)
     return np.array(iou_list)
 
 
 def main():
-    # 1. Hardware-Check (Apple Silicon, CUDA oder CPU)
     if torch.backends.mps.is_available():
         device = torch.device("mps")
         print("Nutze Apple Silicon GPU (MPS)")
@@ -54,7 +45,6 @@ def main():
         device = torch.device("cpu")
         print("Nutze Standard-Prozessor (CPU)")
 
-    # 2. Daten laden
     with open(os.path.join(TILE_DIR, 'splits.json')) as f:
         splits = json.load(f)
 
@@ -65,29 +55,23 @@ def main():
                               shuffle=True, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
 
-    # Klassengewichte (aus den Daten berechnet, damit seltene Klassen
-    # wie "soil" oder "other" nicht untergehen)
     raw_counts = np.array([91358, 27120, 404802, 556455,
                            329, 45694, 3380, 1574904])
     weights = 1.0 / (raw_counts + 1e-6)
     weights = weights / weights.sum() * NUM_CLASSES
     weights_tensor = torch.tensor(weights, dtype=torch.float32).to(device)
 
-    # 3. Modell, Loss und Optimierer initialisieren
     model = get_model(NUM_CLASSES).to(device)
     criterion = get_loss().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # Logger fuer Live-Auswertung (Verzeichnis VOR dem Writer anlegen)
     os.makedirs(LOG_DIR, exist_ok=True)
     writer = SummaryWriter(LOG_DIR)
     best_miou = 0.0
 
-    # 4. Trainings-Loop
     print(f"\nStarte Training fuer {EPOCHS} Epochen...")
     for epoch in range(1, EPOCHS + 1):
 
-        # --- TRAINING ---
         model.train()
         train_loss = 0.0
 
@@ -96,19 +80,12 @@ def main():
             points = points.float().to(device)
             labels = labels.long().to(device)
 
-            # PointNet++ erwartet EINEN Tensor im Format (Batch, Channels, Points).
-            # Spalten: x_c, y_c, Z, R, G, B  ->  6 Kanaele.
-            # Das Modell trennt XYZ (erste 3) und Features intern selbst.
-            inp = points.permute(0, 2, 1).contiguous()  # (B, 6, N)
+            inp = points.permute(0, 2, 1).contiguous()
 
             optimizer.zero_grad()
 
-            # Modell-Output: seg_pred (B, N, num_classes) als log_softmax,
-            #                trans_feat fuer die Loss-Funktion
             seg_pred, trans_feat = model(inp)
 
-            # Fuer den Loss in (B*N, C) umformen - KEIN permute noetig,
-            # da seg_pred bereits (B, N, C) ist.
             seg_pred = seg_pred.contiguous().view(-1, NUM_CLASSES)
             loss = criterion(seg_pred, labels.view(-1),
                              trans_feat, weights_tensor)
@@ -120,7 +97,6 @@ def main():
         avg_loss = train_loss / len(train_loader)
         writer.add_scalar('Loss/Train', avg_loss, epoch)
 
-        # --- VALIDIERUNG (Testen, ohne zu lernen) ---
         model.eval()
         all_ious = []
 
@@ -130,11 +106,10 @@ def main():
                 points = points.float().to(device)
                 labels_np = labels.numpy()
 
-                inp = points.permute(0, 2, 1).contiguous()  # (B, 6, N)
-                seg_pred, _ = model(inp)                     # (B, N, C)
+                inp = points.permute(0, 2, 1).contiguous()
+                seg_pred, _ = model(inp)
 
-                # Hoechste Wahrscheinlichkeit gewinnt -> ueber Klassen-Dim (2)
-                pred_np = seg_pred.argmax(dim=2).cpu().numpy()  # (B, N)
+                pred_np = seg_pred.argmax(dim=2).cpu().numpy()
 
                 for b in range(pred_np.shape[0]):
                     all_ious.append(
@@ -152,7 +127,6 @@ def main():
         for name, val in zip(CLASS_NAMES, iou_array):
             print(f"  {name:<10} IoU = {val:.4f}")
 
-        # Bestes Modell speichern
         if miou > best_miou:
             best_miou = miou
             torch.save(model.state_dict(),

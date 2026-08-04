@@ -2,21 +2,39 @@ import os
 import numpy as np
 from torch.utils.data import Dataset
 
-NUM_CLASSES = 8
-CLASS_NAMES = ['bush','deadwood','graminoid','heath',
-               'other','sand','soil','tree']
+IGNORE_INDEX = 255
 
-# weight_calc.py (Referenz fuer heath_dataset_v2.py)
-CONFIDENCE_MAX    = 10     # Skala 2-10, 9 fehlt in Daten – irrelevant
-SHADOW_WEIGHT     = 0.3
+# Klassenschema per Umgebungsvariable HEATH_SCHEMA, damit Trainings- und
+# Auswertungsskript fuer alle Varianten unveraendert bleiben.
+#   taxo8   Originalschema der Baseline, 8 Klassen (run01 bis run03)
+#   taxo6   sand und soil zu "ground", other ignoriert, 6 Klassen (run04)
+#   binary  Gehoelz gegen alles andere, 2 Klassen
+# Zuordnung der Rohlabels in der Reihenfolge
+# bush, deadwood, graminoid, heath, other, sand, soil, tree.
+_SCHEMAS = {
+    'taxo8': (['bush', 'deadwood', 'graminoid', 'heath', 'other', 'sand',
+               'soil', 'tree'],
+              [0, 1, 2, 3, 4, 5, 6, 7]),
+    'taxo6': (['bush', 'deadwood', 'graminoid', 'heath', 'ground', 'tree'],
+              [0, 1, 2, 3, IGNORE_INDEX, 4, 4, 5]),
+    'binary': (['rest', 'gehoelz'],
+               [1, 0, 0, 0, IGNORE_INDEX, 0, 0, 1]),
+}
+
+SCHEMA = os.environ.get('HEATH_SCHEMA', 'taxo6')
+if SCHEMA not in _SCHEMAS:
+    raise ValueError(f'HEATH_SCHEMA "{SCHEMA}" unbekannt, erlaubt: {list(_SCHEMAS)}')
+
+CLASS_NAMES = _SCHEMAS[SCHEMA][0]
+NUM_CLASSES = len(CLASS_NAMES)
+_LABEL_MAP = np.array(_SCHEMAS[SCHEMA][1], dtype=np.int64)
+
+# Per-Punkt-Qualitaetsgewicht aus shadow/overexposed/confidence
+CONFIDENCE_MAX     = 10     
+SHADOW_WEIGHT      = 0.3
 OVEREXPOSED_WEIGHT = 0.3
-MIN_WEIGHT        = 0.05
+MIN_WEIGHT         = 0.05
 
-def point_weight(shadow: bool, overexposed: bool, confidence: int) -> float:
-    w = confidence / CONFIDENCE_MAX          # [0.2, 1.0]
-    if shadow:      w *= SHADOW_WEIGHT       # *= 0.3
-    if overexposed: w *= OVEREXPOSED_WEIGHT  # *= 0.3
-    return max(w, MIN_WEIGHT)               # clip auf 0.05
 
 class HeideDatasetV2(Dataset):
     def __init__(self, tile_dir, tile_list, augment=False):
@@ -24,36 +42,57 @@ class HeideDatasetV2(Dataset):
         self.tile_list = tile_list
         self.augment = augment
 
+        # Alle Kacheln einmal vorladen und im RAM halten, statt jede .txt bei
+        # jedem Zugriff neu einzulesen.
+        self.points_list = []   
+        self.labels_list = []   
+        self.weight_list = []   
+
+        for fname in tile_list:
+            data = np.loadtxt(os.path.join(tile_dir, fname), dtype=np.float32)
+
+            # Die letzten vier Spalten sind label, shadow, overexposed und
+            # confidence, alles davor sind Features: 6 nur RGB, 7 mit NIR,
+            # 9 zusaetzlich mit z_rel und z_range.
+            n_feat = data.shape[1] - 4
+
+            points = data[:, :n_feat].copy()            
+            labels = _LABEL_MAP[data[:, n_feat].astype(np.int64)]  
+            shadow      = data[:, n_feat + 1]
+            overexposed = data[:, n_feat + 2]
+            confidence  = data[:, n_feat + 3]
+
+            # Per-Punkt-Gewicht, einmalig vorberechnet
+            w = confidence / CONFIDENCE_MAX                              
+            w = np.where(shadow      > 0.5, w * SHADOW_WEIGHT,      w)   # Schatten abwerten
+            w = np.where(overexposed > 0.5, w * OVEREXPOSED_WEIGHT, w)  # Ueberbelichtung abwerten
+            w = np.clip(w, MIN_WEIGHT, 1.0).astype(np.float32)          
+
+            self.points_list.append(points)
+            self.labels_list.append(labels)
+            self.weight_list.append(w)
+            self.n_feat = n_feat 
+
     def __len__(self):
         return len(self.tile_list)
 
     def __getitem__(self, idx):
-        path = os.path.join(self.tile_dir, self.tile_list[idx])
-        data = np.loadtxt(path, dtype=np.float32)  # (N, 10)
+        points = self.points_list[idx]
+        labels = self.labels_list[idx]
+        w      = self.weight_list[idx]
 
-        points = data[:, :6]                        # x,y,Z,R,G,B
-        labels = data[:, 6].astype(np.int64)
-        shadow      = data[:, 7]
-        overexposed = data[:, 8]
-        confidence  = data[:, 9]
-
-        # Per-Punkt-Gewicht berechnen (vektorisiert, kein Python-Loop)
-        w = confidence / CONFIDENCE_MAX                              # [0.2, 1.0]
-        w = np.where(shadow      > 0.5, w * SHADOW_WEIGHT,      w)  # shadow-Punkte abwerten
-        w = np.where(overexposed > 0.5, w * OVEREXPOSED_WEIGHT, w)  # overexposed abwerten
-        w = np.clip(w, MIN_WEIGHT, 1.0).astype(np.float32)          # untere Grenze 0.05
-
+        # Augmentierung standardmaessig aus (laeuft im Trainingsskript).
         if self.augment:
-            points = self._augment(points)
+            points = self._augment(points.copy())
 
         return points, labels, w
 
     @staticmethod
     def _augment(points):
-            angle = np.random.uniform(0, 2*np.pi)
-            c, s = np.cos(angle), np.sin(angle)
-            rot = np.array([[c,-s],[s,c]], dtype=np.float32)
-            points[:, :2] = points[:, :2] @ rot.T
-            points[:, :3] += np.random.normal(0,0.01,
-                            size=points[:, :3].shape).astype(np.float32)
-            return points
+        angle = np.random.uniform(0, 2 * np.pi)
+        c, s = np.cos(angle), np.sin(angle)
+        rot = np.array([[c, -s], [s, c]], dtype=np.float32)
+        points[:, :2] = points[:, :2] @ rot.T
+        points[:, :3] += np.random.normal(0, 0.01,
+                          size=points[:, :3].shape).astype(np.float32)
+        return points
