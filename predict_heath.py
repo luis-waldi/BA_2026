@@ -19,9 +19,9 @@ geladen, vorhergesagt werden aber nur die Punkte des Blocks selbst.
 
 Aufruf:
     HEATH_SCHEMA=taxo6 HEATH_RADII=wide python predict_heath.py \
-        --block_dir /home/l/lwaldeye/data/inferenz_110kv \
+        --block_dir $HEATH_DATA/inferenz_110kv \
         --model_path ./log/sem_seg/run07_radien/checkpoints/best_model.pth \
-        --out_dir /home/l/lwaldeye/data/vorhersage_110kv
+        --out_dir $HEATH_DATA/vorhersage_110kv
 """
 
 import os

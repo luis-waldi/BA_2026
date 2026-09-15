@@ -54,7 +54,7 @@ class HeideDataset(Dataset):
 if __name__ == '__main__':
     import json
     # Pfad anpassen, falls er bei dir anders heißt!
-    TILE_DIR = '/Users/luis/Documents/BA/training_tiles'
+    TILE_DIR = os.path.join(DATA_ROOT, 'processed', 'training_tiles_v3')
     
     with open(os.path.join(TILE_DIR, 'splits.json')) as f:
         splits = json.load(f)

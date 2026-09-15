@@ -1,5 +1,5 @@
 # LabelMapping.R: Preprocessing der Trainingsdaten
-# Daten ausserhalb des Repos unter /Users/luis/Documents/BA/data/:
+# Daten ausserhalb des Repos unter $HEATH_DATA (Standard: ./data):
 #   raw/       Rohdaten (Punktwolke .laz, DGM, tile .tif)
 #   labeled/   gelabelte GPKGs
 #   processed/ Outputs (rds, LAZ, training_tiles_v3)
@@ -9,23 +9,27 @@ library(sf)
 library(terra)
 library(lidR)
 
-las <- readLAS("/Users/luis/Documents/BA/data/raw/Punktwolke_AuthausenerWald_Schneise_I_20250522.laz")
+# Datenwurzel: per Umgebungsvariable HEATH_DATA setzbar, sonst ./data
+data_root <- Sys.getenv("HEATH_DATA", "data")
+
+
+las <- readLAS(file.path(data_root, "raw", "Punktwolke_AuthausenerWald_Schneise_I_20250522.laz"))
 #las
 
 las <- remove_lasattribute(las, "normal x")
 las <- remove_lasattribute(las, "normal y")
 las <- remove_lasattribute(las, "normal z")
 
-writeLAS(las, "/Users/luis/Documents/BA/data/processed/Punktwolke_ohne_normals.laz")
+writeLAS(las, file.path(data_root, "processed", "Punktwolke_ohne_normals.laz"))
 
 
-las2 <- readLAS("/Users/luis/Documents/BA/data/processed/Punktwolke_ohne_normals.laz")
+las2 <- readLAS(file.path(data_root, "processed", "Punktwolke_ohne_normals.laz"))
 names(las2@data)
 
 #Testbereich
 
-las <- readLAS("/Users/luis/Documents/BA/data/raw/Punktwolke_AuthausenerWald_Schneise_I_20250522.laz")
-polys <- st_read("/Users/luis/Documents/BA/data/labeled/Authausen_02_tile_3_segments_labeled_JS.gpkg")
+las <- readLAS(file.path(data_root, "raw", "Punktwolke_AuthausenerWald_Schneise_I_20250522.laz"))
+polys <- st_read(file.path(data_root, "labeled", "Authausen_02_tile_3_segments_labeled_JS.gpkg"))
 
 #gleiches CRS?
 
@@ -59,8 +63,8 @@ library(lidR)
 library(sf)
 library(dplyr)
 
-dir_labeled <- "/Users/luis/Documents/BA/data/labeled"
-dir_raw     <- "/Users/luis/Documents/BA/data/raw"
+dir_labeled <- file.path(data_root, "labeled")
+dir_raw     <- file.path(data_root, "raw")
 
 # Punktwolken je Gebiet
 laz_schneise_I <- file.path(dir_raw, "Punktwolke_AuthausenerWald_Schneise_I_20250522.laz")
@@ -152,7 +156,7 @@ cat("\nShadow:\n");      print(table(df_all$shadow,      useNA = "ifany"))
 cat("\nOverexposed:\n"); print(table(df_all$overexposed, useNA = "ifany"))
 cat("\nConfidence:\n");  print(table(df_all$confidence,  useNA = "ifany"))
 
-saveRDS(df_all, "/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_tiles_v3.rds")
+saveRDS(df_all, file.path(data_root, "processed", "trainingspunkte_alle_tiles_v3.rds"))
 
 
 #----------------------------------------------------------------------------------------
@@ -162,7 +166,7 @@ saveRDS(df_all, "/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_ti
 
 library(lidR)
 
-df_all <- readRDS("/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_tiles_v3.rds")
+df_all <- readRDS(file.path(data_root, "processed", "trainingspunkte_alle_tiles_v3.rds"))
 
 # Flags in 0/1 umwandeln
 shadow_vec  <- as.integer(df_all$shadow      %in% c(TRUE, "true", "True", "1", 1))
@@ -192,10 +196,10 @@ las_all <- add_lasattribute(las_all, overexp_vec, "overexposed", "Ueberbelichtet
 las_all <- add_lasattribute(las_all, conf_vec,    "confidence",  "Label-Confidence")
 las_all <- add_lasattribute(las_all, nir_vec,     "nir",         "Nahinfrarot")
 
-writeLAS(las_all, "/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_tiles_classified_v3.laz")
+writeLAS(las_all, file.path(data_root, "processed", "trainingspunkte_alle_tiles_classified_v3.laz"))
 
 # Attribute muessen erhalten sein
-las_check <- readLAS("/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_tiles_classified_v3.laz")
+las_check <- readLAS(file.path(data_root, "processed", "trainingspunkte_alle_tiles_classified_v3.laz"))
 print(names(las_check@data))   
 #----------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------
@@ -205,7 +209,7 @@ library(lidR)
 
 # Punktwolke laden. Z ist bereits pro Tile normalisiert, Classification enthaelt
 # die semantische class_id.
-las_norm <- readLAS("/Users/luis/Documents/BA/data/processed/trainingspunkte_alle_tiles_classified_v3.laz")
+las_norm <- readLAS(file.path(data_root, "processed", "trainingspunkte_alle_tiles_classified_v3.laz"))
 
 # --- Schwellenwert-Regeln ---
 # Grenzen = 95. Perzentil der normierten Hoehe je Klasse (hoehen_analyse.R).
@@ -224,7 +228,7 @@ las_norm$Classification[las_norm$Classification == 8 & las_norm$Z < 0.5] <- 4L  
 las_norm$Classification[las_norm$Classification == 8 & las_norm$Z >= 0.5 & las_norm$Z < 2.0] <- 1L  # -> bush
 
 # 7. Finale Datei speichern
-writeLAS(las_norm, "/Users/luis/Documents/BA/data/processed/tiles_csf_knnidw_final_v3.laz")             
+writeLAS(las_norm, file.path(data_root, "processed", "tiles_csf_knnidw_final_v3.laz"))             
 
 print(table(las_norm$Classification))
 
@@ -235,7 +239,7 @@ print(table(las_norm$Classification))
 
 library(lidR)
 library(sf)
-las_norm <- readLAS("/Users/luis/Documents/BA/data/processed/tiles_csf_knnidw_final_v3.laz")
+las_norm <- readLAS(file.path(data_root, "processed", "tiles_csf_knnidw_final_v3.laz"))
 
 # --- Lokale Hoehenmerkmale ---
 # Zwei Strukturattribute je Punkt, die die Hoehe allein nicht liefert:
@@ -280,16 +284,18 @@ add_height_features <- function(las) {
   las
 }
 
-output_dir <- "/Users/luis/Documents/BA/data/processed/training_tiles_v5/"
+output_dir <- file.path(data_root, "processed", "training_tiles_v5")
 dir.create(output_dir, showWarnings = FALSE)
 # alte Tiles entfernen, damit ein neuer Lauf sauber startet
 file.remove(list.files(output_dir, pattern = "\\.txt$", full.names = TRUE))
 
 set.seed(42)  # reproduzierbares Sampling der Punkte je Kachel
-# n_points von 4096 auf 8192 erhoeht. Die Rohwolke hat 113 (Authausen) bis
-# 184 (Cuxhaven) Punkte je m2, ein 10x10-m-Fenster enthaelt im Median 9700
-# bis 12800 Punkte. Mit 4096 blieben davon nur 32 bis 42 Prozent uebrig, was
-# die Nachbarschaftssuche der ersten Schichten aushungert.
+# n_points von 4096 auf 8192 erhoeht. Gemessen ueber vollstaendig belegte
+# 10x10-m-Fenster der Rohwolken liegt die Dichte bei 98 (Cuxhaven), 116
+# (110-kV-Trasse), 140 (Schneisen IV/V) und 156 (Schneise I) Punkten je m2,
+# ein solches Fenster enthaelt also 9800 bis 15600 Punkte. Mit 4096 blieben
+# davon nur 26 bis 42 Prozent uebrig, was die Nachbarschaftssuche der ersten
+# Schichten aushungert.
 tile_size <- 10; stride <- 5; n_points <- 8192
 # label_map: class_id -> 0-indexiertes Label fuer PointNet++.
 # An die Klassenreihenfolge in class_levels gekoppelt.
@@ -302,7 +308,7 @@ label_map <- c("1"=0,"2"=1,"3"=2,"4"=3,"5"=4,"6"=5,"7"=6,"8"=7,"9"=8)
 # Tiles liegen isoliert und bilden je einen eigenen Bereich.
 # Der Bereichsname wird spaeter dem Dateinamen vorangestellt,
 # damit make_splits.py ganze Bereiche einem Split zuordnen kann.
-dir_labeled <- "/Users/luis/Documents/BA/data/labeled"
+dir_labeled <- file.path(data_root, "labeled")
 regions <- list(
   schneiseI = c("Authausen_02_tile_1_segments_labeled_JS.gpkg",
                 "Authausen_02_tile_2_segments_labeled_JS.gpkg",

@@ -8,7 +8,11 @@ set_lidr_threads(0)
 library(lidR)
 library(dplyr)
 
-proc <- "/Users/luis/Documents/BA/data/processed"
+# Datenwurzel: per Umgebungsvariable HEATH_DATA setzbar, sonst ./data
+data_root <- Sys.getenv("HEATH_DATA", "data")
+
+
+proc <- file.path(data_root, "processed")
 out  <- file.path(proc, "hoehen_analyse")
 dir.create(out, showWarnings = FALSE)
 

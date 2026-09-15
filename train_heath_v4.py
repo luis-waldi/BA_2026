@@ -29,7 +29,7 @@ from data_utils.heath_dataset_v2 import (HeideDatasetV2, NUM_CLASSES, CLASS_NAME
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(BASE_DIR, 'models'))
 
-TILE_DIR_DEFAULT = '/Users/luis/Documents/BA/data/processed/training_tiles_v3'
+TILE_DIR_DEFAULT = os.path.join(DATA_ROOT, 'processed', 'training_tiles_v5')
 
 
 def inplace_relu(m):

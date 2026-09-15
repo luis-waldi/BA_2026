@@ -14,7 +14,7 @@ from data_utils.heath_dataset import HeideDataset, NUM_CLASSES, CLASS_NAMES
 BATCH_SIZE    = 8
 EPOCHS        = 64
 LEARNING_RATE = 1e-4
-TILE_DIR      = '/Users/luis/Documents/BA/training_tiles'
+TILE_DIR      = os.path.join(DATA_ROOT, 'processed', 'training_tiles_v3')
 LOG_DIR       = './logs/heath_run2'
 PRETRAINED    = './logs/heath_run1/best_model.pth'
 

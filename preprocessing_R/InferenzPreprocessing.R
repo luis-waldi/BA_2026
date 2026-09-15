@@ -18,15 +18,47 @@ library(lidR)
 library(sf)
 library(terra)
 
+# Datenwurzel: per Umgebungsvariable HEATH_DATA setzbar, sonst ./data
+data_root <- Sys.getenv("HEATH_DATA", "data")
+
+
 # --- Konfiguration ---
-in_laz  <- "/Users/luis/Documents/BA/data/raw/Punktwolke_AuthausenerWald_110kVTrassePSAPlatz_20250521.laz"
-out_dir <- "/Users/luis/Documents/BA/data/processed/inferenz_110kv/"
+# Zu verarbeitendes Gebiet. Nur diese eine Zeile wird zwischen den Laeufen
+# geaendert, alles Weitere steht in der Tabelle darunter.
+gebiet <- "schneise_iv_v"
+
+raw_dir <- file.path(data_root, "raw")
+gebiete <- list(
+  "110kv" = list(
+    laz = "Punktwolke_AuthausenerWald_110kVTrassePSAPlatz_20250521.laz",
+    out = "inferenz_110kv"),
+  "heidewildnis" = list(
+    laz = "Punktwolke_AuthausenerWald_HeideWildnis_20250522.laz",
+    out = "inferenz_heidewildnis"),
+  "schneise_i" = list(
+    laz = "Punktwolke_AuthausenerWald_Schneise_I_20250522.laz",
+    out = "inferenz_schneise_i"),
+  "schneise_iv_v" = list(
+    laz = "Punktwolke_AuthausenerWald_Schneise_IV_V_20250522.laz",
+    out = "inferenz_schneise_iv_v"),
+  "cuxhaven" = list(
+    laz = "Punktwolke_Cuxhavener_Küstenheiden_2025.laz",
+    out = "inferenz_cuxhaven")
+)
+
+stopifnot(gebiet %in% names(gebiete))
+in_laz  <- file.path(raw_dir, gebiete[[gebiet]]$laz)
+out_dir <- file.path(data_root, "processed",
+                     gebiete[[gebiet]]$out, "")
 
 chunk_size   <- 100   # m Kantenlaenge je Verarbeitungsblock
 chunk_buffer <- 20    # m Puffer, deutlich groesser als das 2.5-m-Fenster von z_rel
 HEIGHT_CLIP  <- 5     # m, wie im Trainingsexport
 
+set_lidr_threads(4)   # die Bodenklassifikation ist der teure Teil
+
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+cat("Gebiet:", gebiet, "\n  Eingabe:", in_laz, "\n  Ausgabe:", out_dir, "\n")
 
 px_fun <- if ("pixel_metrics" %in% getNamespaceExports("lidR")) {
   lidR::pixel_metrics   # lidR >= 4

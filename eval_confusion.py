@@ -18,7 +18,7 @@ def parse_args():
     p.add_argument('--model', type=str, default='pointnet2_sem_seg',
                    help='Modelldatei in models/, muss zum Training passen')
     p.add_argument('--tile_dir', type=str,
-                   default='/Users/luis/Documents/BA/data/processed/training_tiles_v3')
+                   default=os.path.join(DATA_ROOT, 'processed', 'training_tiles_v5'))
     p.add_argument('--model_path', type=str,
                    default='./log/sem_seg/run01/checkpoints/best_model.pth')
     p.add_argument('--split', type=str, default='test', help='train, val oder test')

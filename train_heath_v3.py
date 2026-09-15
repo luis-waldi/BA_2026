@@ -16,7 +16,7 @@ from data_utils.heath_dataset_v2 import HeideDatasetV2, NUM_CLASSES, CLASS_NAMES
 sys.path.append('./models')
 from models.pointnet2_sem_seg import get_model
 
-TILE_DIR    = '/Users/luis/Documents/BA/data/processed/training_tiles_v3'
+TILE_DIR    = os.path.join(DATA_ROOT, 'processed', 'training_tiles_v3')
 INIT_MODEL  = './logs/heath_run2/best_model.pth'
 LOG_DIR     = './logs/heath_run3'
 

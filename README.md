@@ -1,183 +1,175 @@
-# Pytorch Implementation of PointNet and PointNet++ 
+# Verbuschungsgrad von Heideflächen aus SfM-Punktwolken
 
-This repo is implementation for [PointNet](http://openaccess.thecvf.com/content_cvpr_2017/papers/Qi_PointNet_Deep_Learning_CVPR_2017_paper.pdf) and [PointNet++](http://papers.nips.cc/paper/7095-pointnet-deep-hierarchical-feature-learning-on-point-sets-in-a-metric-space.pdf) in pytorch.
+Code zur Bachelorarbeit *Quantifizierung von Verbuschung in
+Natura-2000-Heideflächen: Ein Vergleich von 2D- und 3D-Deep-Learning-Verfahren
+zur drohnengestützten Habitatbewertung* (Universität Münster, Institut für
+Geoinformatik).
 
-## Update
-**2021/03/27:** 
+Vollständige Verarbeitungskette von der photogrammetrischen Rohpunktwolke bis
+zum flächendeckenden Verbuschungsgrad: Vorverarbeitung und Label-Transfer in R,
+Training und Inferenz von PointNet++ in PyTorch, Auswertung gegen eine
+Biotoptypenkartierung.
 
-(1) Release pre-trained models for semantic segmentation, where PointNet++ can achieve **53.5\%** mIoU.
+## Herkunft des Codes
 
-(2) Release pre-trained models for classification and part segmentation in `log/`.
+Das PointNet++-Grundgerüst stammt aus
+[yanx27/Pointnet_Pointnet2_pytorch](https://github.com/yanx27/Pointnet_Pointnet2_pytorch)
+und steht unter der MIT-Lizenz (siehe `LICENSE`). Es wurde unverändert als
+eigener Commit übernommen, bevor die erste eigene Codezeile entstand.
 
-**2021/03/20:** Update codes for classification, including:
+Übernommen: `models/`, `provider.py`, `visualizer/`, Teile von `data_utils/`
+sowie die Skripte für ModelNet, ShapeNet und S3DIS (`train_classification.py`,
+`train_semseg.py`, `train_partseg.py` und die zugehörigen Testskripte). Diese
+Dateien werden in der Arbeit nicht verwendet und bleiben nur zur
+Nachvollziehbarkeit der Herkunft erhalten.
 
-(1) Add codes for training **ModelNet10** dataset. Using setting of ``--num_category 10``. 
+Eigene Entwicklung: die R-Vorverarbeitung, `data_utils/heath_dataset_v2.py`, die
+Trainings-, Auswertungs- und Inferenzskripte für den Heidedatensatz sowie die
+beiden Auswertungsskripte zum Verbuschungsgrad.
 
-(2) Add codes for running on CPU only. Using setting of ``--use_cpu``. 
+## Verarbeitungskette
 
-(3) Add codes for offline data preprocessing to accelerate training. Using setting of ``--process_data``. 
+| Schritt | Skript | Ergebnis |
+| --- | --- | --- |
+| 1. Trainingsdaten aufbereiten | `preprocessing_R/LabelMapping.R` | Kacheln als Textdateien |
+| 2. Datenaufteilung | `make_splits.py` | `splits.json` |
+| 3. Training | `train_heath_v4.py` | Modellgewichte in `log/sem_seg/<lauf>/` |
+| 4. Auswertung auf dem Testteil | `eval_confusion.py` | Konfusionsmatrix und Kennzahlen |
+| 5. Inferenzgebiete aufbereiten | `preprocessing_R/InferenzPreprocessing.R` | normalisierte LAZ-Blöcke |
+| 6. Inferenz | `predict_heath.py` | Vorhersage je Punkt |
+| 7a. Auswertung je Polygon | `verbuschungsgrad.py` | Vergleich mit der Kartierung |
+| 7b. Flächendeckende Karte | `verbuschungskarte.py` | GeoTIFF des Verbuschungsgrades |
 
-(4) Add codes for training with uniform sampling. Using setting of ``--use_uniform_sample``. 
+`preprocessing_R/hoehen_analyse.R` leitet die Höhenschwellen der Labelkorrektur
+aus der Höhenverteilung je Klasse ab, Vorstufe zu Schritt 1.
 
-**2019/11/26:**
+### 1. Vorverarbeitung und Label-Transfer
 
-(1) Fixed some errors in previous codes and added data augmentation tricks. Now classification by only 1024 points can achieve **92.8\%**! 
+`LabelMapping.R` erzeugt aus Rohpunktwolken und annotierten Polygonen die
+Trainingskacheln: Bodenklassifikation, Höhennormalisierung, Label-Transfer,
+höhenbasierte Labelkorrektur, lokale Höhenmerkmale, Kachelung.
 
-(2) Added testing codes, including classification and segmentation, and semantic segmentation with visualization. 
+Jede Kachel ist eine Textdatei mit 8.192 Zeilen und 13 Spalten:
 
-(3) Organized all models into `./models` files for easy using.
-
-## Install
-The latest codes are tested on Ubuntu 16.04, CUDA10.1, PyTorch 1.6 and Python 3.7:
-```shell
-conda install pytorch==1.6.0 cudatoolkit=10.1 -c pytorch
+```
+x  y  z  R  G  B  NIR  z_rel  z_range  label  shadow  overexposed  confidence
 ```
 
-## Classification (ModelNet10/40)
-### Data Preparation
-Download alignment **ModelNet** [here](https://shapenet.cs.stanford.edu/media/modelnet40_normal_resampled.zip) and save in `data/modelnet40_normal_resampled/`.
+Der Dataloader leitet die Zahl der Eingabekanäle als Spaltenzahl minus vier ab.
 
-### Run
-You can run different modes with following codes. 
-* If you want to use offline processing of data, you can use `--process_data` in the first run. You can download pre-processd data [here](https://drive.google.com/drive/folders/1_fBYbDO3XSdRt3DSbEBe41r5l9YpIGWF?usp=sharing) and save it in `data/modelnet40_normal_resampled/`.
-* If you want to train on ModelNet10, you can use `--num_category 10`.
-```shell
-# ModelNet40
-## Select different models in ./models 
+### 2. Datenaufteilung
 
-## e.g., pointnet2_ssg without normal features
-python train_classification.py --model pointnet2_cls_ssg --log_dir pointnet2_cls_ssg
-python test_classification.py --log_dir pointnet2_cls_ssg
-
-## e.g., pointnet2_ssg with normal features
-python train_classification.py --model pointnet2_cls_ssg --use_normals --log_dir pointnet2_cls_ssg_normal
-python test_classification.py --use_normals --log_dir pointnet2_cls_ssg_normal
-
-## e.g., pointnet2_ssg with uniform sampling
-python train_classification.py --model pointnet2_cls_ssg --use_uniform_sample --log_dir pointnet2_cls_ssg_fps
-python test_classification.py --use_uniform_sample --log_dir pointnet2_cls_ssg_fps
-
-# ModelNet10
-## Similar setting like ModelNet40, just using --num_category 10
-
-## e.g., pointnet2_ssg without normal features
-python train_classification.py --model pointnet2_cls_ssg --log_dir pointnet2_cls_ssg --num_category 10
-python test_classification.py --log_dir pointnet2_cls_ssg --num_category 10
+```bash
+python make_splits.py --tile_dir <pfad/zu/den/kacheln>
 ```
 
-### Performance
-| Model | Accuracy |
-|--|--|
-| PointNet (Official) |  89.2|
-| PointNet2 (Official) | 91.9 |
-| PointNet (Pytorch without normal) |  90.6|
-| PointNet (Pytorch with normal) |  91.4|
-| PointNet2_SSG (Pytorch without normal) |  92.2|
-| PointNet2_SSG (Pytorch with normal) |  92.4|
-| PointNet2_MSG (Pytorch with normal) |  **92.8**|
+Verteilt räumlich getrennte Blöcke im Verhältnis 70/15/15.
 
-## Part Segmentation (ShapeNet)
-### Data Preparation
-Download alignment **ShapeNet** [here](https://shapenet.cs.stanford.edu/media/shapenetcore_partanno_segmentation_benchmark_v0_normal.zip)  and save in `data/shapenetcore_partanno_segmentation_benchmark_v0_normal/`.
-### Run
-```
-## Check model in ./models 
-## e.g., pointnet2_msg
-python train_partseg.py --model pointnet2_part_seg_msg --normal --log_dir pointnet2_part_seg_msg
-python test_partseg.py --normal --log_dir pointnet2_part_seg_msg
-```
-### Performance
-| Model | Inctance avg IoU| Class avg IoU 
-|--|--|--|
-|PointNet (Official)	|83.7|80.4	
-|PointNet2 (Official)|85.1	|81.9	
-|PointNet (Pytorch)|	84.3	|81.1|	
-|PointNet2_SSG (Pytorch)|	84.9|	81.8	
-|PointNet2_MSG (Pytorch)|	**85.4**|	**82.5**	
+### 3. Training
 
+```bash
+HEATH_SCHEMA=taxo6 HEATH_RADII=wide \
+python train_heath_v4.py --tile_dir <pfad> --log_dir run07_radien
+```
 
-## Semantic Segmentation (S3DIS)
-### Data Preparation
-Download 3D indoor parsing dataset (**S3DIS**) [here](http://buildingparser.stanford.edu/dataset.html)  and save in `data/s3dis/Stanford3dDataset_v1.2_Aligned_Version/`.
-```
-cd data_utils
-python collect_indoor3d_data.py
-```
-Processed data will save in `data/stanford_indoor3d/`.
-### Run
-```
-## Check model in ./models 
-## e.g., pointnet2_ssg
-python train_semseg.py --model pointnet2_sem_seg --test_area 5 --log_dir pointnet2_sem_seg
-python test_semseg.py --log_dir pointnet2_sem_seg --test_area 5 --visual
-```
-Visualization results will save in `log/sem_seg/pointnet2_sem_seg/visual/` and you can visualize these .obj file by [MeshLab](http://www.meshlab.net/).
+Zwei Umgebungsvariablen steuern die Varianten der Ablationsstudie:
 
-### Performance
-|Model  | Overall Acc |Class avg IoU | Checkpoint 
-|--|--|--|--|
-| PointNet (Pytorch) | 78.9 | 43.7| [40.7MB](log/sem_seg/pointnet_sem_seg) |
-| PointNet2_ssg (Pytorch) | **83.0** | **53.5**| [11.2MB](log/sem_seg/pointnet2_sem_seg) |
+| Variable | Werte | Bedeutung |
+| --- | --- | --- |
+| `HEATH_SCHEMA` | `taxo8`, `taxo6`, `binary` | Klassenschema mit 8, 6 oder 2 Klassen |
+| `HEATH_RADII` | `default`, `wide` | Nachbarschaftsradien (0,1/0,2/0,4/0,8 m oder 0,25/0,5/1,0/2,0 m) |
 
-## Visualization
-### Using show3d_balls.py
-```
-## build C++ code for visualization
-cd visualizer
-bash build.sh 
-## run one example 
-python show3d_balls.py
-```
-![](/visualizer/pic.png)
-### Using MeshLab
-![](/visualizer/pic2.png)
+Weitere Parameter über die Kommandozeile, unter anderem `--batch_size`,
+`--epoch`, `--learning_rate`, `--loss` (`weighted` oder `focal`) und `--model`
+(`pointnet2_sem_seg` oder `pointnet2_sem_seg_msg`).
 
+### 4. Auswertung
 
-## Reference By
-[halimacc/pointnet3](https://github.com/halimacc/pointnet3)<br>
-[fxia22/pointnet.pytorch](https://github.com/fxia22/pointnet.pytorch)<br>
-[charlesq34/PointNet](https://github.com/charlesq34/pointnet) <br>
-[charlesq34/PointNet++](https://github.com/charlesq34/pointnet2)
+```bash
+HEATH_SCHEMA=taxo6 HEATH_RADII=wide \
+python eval_confusion.py --tile_dir <pfad> \
+    --model_path log/sem_seg/run07_radien/checkpoints/best_model.pth
+```
 
+Liefert Konfusionsmatrix, IoU, Precision, Recall und F1 je Klasse,
+Gesamtgenauigkeit, mittlere IoU und die Zusammenfassung Gehölz gegen Rest.
+Umgebungsvariablen und Kanalzahl müssen zum Training passen, sonst lässt sich
+der Checkpoint nicht laden.
 
-## Citation
-If you find this repo useful in your research, please consider citing it and our other works:
+### 5. Inferenzgebiete aufbereiten
+
+`InferenzPreprocessing.R` wendet dieselben Schritte auf ungelabelte
+Befliegungsgebiete an, blockweise wegen der Datenmenge. Ergebnis sind
+georeferenzierte LAZ-Blöcke mit den beiden Höhenmerkmalen als Punktattributen.
+
+### 6. Inferenz
+
+```bash
+HEATH_SCHEMA=taxo6 HEATH_RADII=wide \
+python predict_heath.py \
+    --block_dir <pfad/zu/den/blöcken> \
+    --model_path log/sem_seg/run07_radien/checkpoints/best_model.pth \
+    --out_dir <ausgabepfad>
 ```
-@article{Pytorch_Pointnet_Pointnet2,
-      Author = {Xu Yan},
-      Title = {Pointnet/Pointnet++ Pytorch},
-      Journal = {https://github.com/yanx27/Pointnet_Pointnet2_pytorch},
-      Year = {2019}
-}
+
+Mittelt die Klassenwahrscheinlichkeiten über alle überlappenden Fenster und lädt
+jeden Block mit einem Saum aus den Nachbarblöcken. Mit `--write_laz` entsteht
+zusätzlich eine klassifizierte Punktwolke.
+
+### 7. Verbuschungsgrad
+
+Vergleich mit der Kartierung:
+
+```bash
+python verbuschungsgrad.py \
+    --pred_dir <vorhersagen> --shapefile <kartierung.shp> \
+    --out <ausgabe> --max_hoehe 2 3 5 8
 ```
+
+Flächendeckende Karte:
+
+```bash
+python verbuschungskarte.py \
+    --pred_dir <vorhersagen> --out <ausgabe> --zelle 5 --max_hoehe 5
 ```
-@InProceedings{yan2020pointasnl,
-  title={PointASNL: Robust Point Clouds Processing using Nonlocal Neural Networks with Adaptive Sampling},
-  author={Yan, Xu and Zheng, Chaoda and Li, Zhen and Wang, Sheng and Cui, Shuguang},
-  journal={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
-  year={2020}
-}
+
+Beide projizieren die Punktvorhersagen in ein Raster von 0,25 m, in dem jede
+Zelle Klasse und Höhe ihres höchsten Punktes übernimmt. Als verbuscht gilt eine
+Zelle mit Klasse `bush` oder `tree` unterhalb der über `--max_hoehe` gesetzten
+Grenze. `verbuschungskarte.py` schreibt zwei GeoTIFFs in EPSG 25832, den
+Verbuschungsgrad je Zelle in Prozent und die häufigste Kronenklasse.
+
+## Voraussetzungen
+
+Python 3.9 mit PyTorch, NumPy, laspy, tqdm, shapely, pyshp, rasterio, openpyxl
+und Matplotlib. Training auf einer CUDA-fähigen Grafikkarte, zusätzlich wird
+Apple Silicon über MPS unterstützt.
+
+R mit `lidR`, `sf`, `terra` und `dplyr`.
+
+## Daten
+
+Punktwolken, Orthomosaike und Annotationen liegen außerhalb des Repositorys und
+sind nicht Teil der Veröffentlichung. Die Rohdaten stammen aus einer Befliegung
+der Deutschen Bundesstiftung Umwelt, die Referenzdaten aus der
+Biotoptypenkartierung der DBU-Naturerbefläche Authausener Wald von 2014.
+Trainingsartefakte sind über die `.gitignore` ausgeschlossen.
+
+Alle Skripte erwarten die Daten unter dem Verzeichnis, das die Umgebungsvariable
+`HEATH_DATA` benennt, mit Rückfall auf `./data`:
+
 ```
+data/
+├── raw/          Rohpunktwolken, DGM
+├── labeled/      annotierte GPKG-Dateien
+└── processed/    Zwischenergebnisse und Trainingskacheln
 ```
-@InProceedings{yan2021sparse,
-  title={Sparse Single Sweep LiDAR Point Cloud Segmentation via Learning Contextual Shape Priors from Scene Completion},
-  author={Yan, Xu and Gao, Jiantao and Li, Jie and Zhang, Ruimao, and Li, Zhen and Huang, Rui and Cui, Shuguang},
-  journal={AAAI Conference on Artificial Intelligence ({AAAI})},
-  year={2021}
-}
+
+```bash
+export HEATH_DATA=/pfad/zu/den/daten
 ```
-```
-@InProceedings{yan20222dpass,
-      title={2DPASS: 2D Priors Assisted Semantic Segmentation on LiDAR Point Clouds}, 
-      author={Xu Yan and Jiantao Gao and Chaoda Zheng and Chao Zheng and Ruimao Zhang and Shuguang Cui and Zhen Li},
-      year={2022},
-      journal={ECCV}
-}
-```
-## Selected Projects using This Codebase
-* [PointConv: Deep Convolutional Networks on 3D Point Clouds, CVPR'19](https://github.com/Young98CN/pointconv_pytorch)
-* [On Isometry Robustness of Deep 3D Point Cloud Models under Adversarial Attacks, CVPR'20](https://github.com/skywalker6174/3d-isometry-robust)
-* [Label-Efficient Learning on Point Clouds using Approximate Convex Decompositions, ECCV'20](https://github.com/matheusgadelha/PointCloudLearningACD)
-* [PCT: Point Cloud Transformer](https://github.com/MenghaoGuo/PCT)
-* [PSNet: Fast Data Structuring for Hierarchical Deep Learning on Point Cloud](https://github.com/lly007/PointStructuringNet)
-* [Stratified Transformer for 3D Point Cloud Segmentation, CVPR'22](https://github.com/dvlab-research/stratified-transformer)
+
+## Lizenz
+
+MIT, siehe `LICENSE`. Der Lizenztext und der Urheberrechtsvermerk von yanx27
+bleiben erhalten.
